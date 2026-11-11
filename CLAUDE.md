@@ -5,9 +5,13 @@ Contexto compartido para las sesiones de Claude que trabajan en este repo. Léel
 ```
 fronterra-analytics/
 ├── CLAUDE.md      este archivo (contexto compartido)
+├── .mcp.json      registra el servidor MCP "dashboards" (node dashboard/mcp-server.js)
 ├── pipeline/      Python + dlt (SAP HANA → Postgres) y luego dbt — ver pipeline/CLAUDE.md
-└── dashboard/     app de dashboards + servidor MCP
+└── dashboard/     app de dashboards + servidor MCP (Node 24) — ver dashboard/CLAUDE.md
 ```
+
+Abre las sesiones de Claude en la raíz del repo para tener el MCP `dashboards` (requiere `npm install` en `dashboard/` y `dashboard/config.json` o `.env` con la conexión, que no van al repo).
+Las secciones Arquitectura, Reglas y Decisiones de este archivo también se le pasan al MCP como contexto: mantenlas al día.
 
 ## Arquitectura
 SAP HANA → dlt (pipeline/) → Postgres en Railway (base hanaDB, esquema sap_hana_raw = datos crudos) → dbt (pipeline/) → esquema analytics (datos curados) → app de dashboards (dashboard/): página web en localhost:3000 + servidor MCP para que Claude consulte y cree gráficas. Los dashboards se guardan en el esquema dashapp.
@@ -46,5 +50,7 @@ Dos sesiones de Claude (servidor windows y PC Windows) clonan este mismo repo co
 - [ ] pipeline: proyecto dbt con modelos en analytics.
 - [ ] pipeline: script SQL que crea claude_lector (solo lectura, solo analytics, con default privileges para tablas nuevas de dbt). La contraseña la pone el usuario, no va al repo.
 - [ ] dashboard: dos conexiones (postgres solo para dashapp, claude_lector para las consultas de Claude).
-- [ ] dashboard: reescribir los dashboards existentes para leer de analytics.
+- [ ] dashboard: reescribir los dashboards existentes para leer de analytics. Hoy hay: "Ventas 2026" (10 gráficas) y 4 dashboards
+      "Semana …" (12 oct – 8 nov 2026, 8 gráficas cada uno, fechas fijas). Todos consultan sap_hana_raw.
+- [ ] revisar con el negocio la semana 26 oct – 1 nov 2026: ~29.7 mil cajas pero solo $2.8 M MXN (las demás semanas $9–16 M); posible carga incompleta.
 - [ ] pipeline: carga incremental por update_date y tarea programada de Windows en el servidor (hoy se corre a mano).

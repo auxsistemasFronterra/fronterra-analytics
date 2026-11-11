@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboards con Claude</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+  <!-- Conexión -->
+  <section id="connect-view" class="connect hidden">
+    <div class="connect-card">
+      <h1>Dashboards con Claude</h1>
+      <p class="muted">Pega la cadena de conexión de tu Postgres.<br>
+        En Railway: servicio Postgres → <b>Variables</b> → <code>DATABASE_PUBLIC_URL</code>.</p>
+      <form id="connect-form">
+        <input id="conn-input" type="password" autocomplete="off" spellcheck="false"
+               placeholder="postgresql://postgres:****@****.proxy.rlwy.net:12345/railway" required>
+        <label class="check"><input type="checkbox" id="conn-show"> Mostrar</label>
+        <button type="submit" class="primary">Conectar</button>
+      </form>
+      <p id="connect-error" class="error"></p>
+    </div>
+  </section>
+
+  <!-- App -->
+  <div id="app-view" class="layout hidden">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">Dashboards</div>
+      <div class="conn-info" id="conn-info"></div>
+      <div class="side-head">
+        <span>Mis dashboards</span>
+        <button id="new-dashboard" class="icon" title="Nuevo dashboard">＋</button>
+      </div>
+      <ul id="dashboard-list" class="dash-list"></ul>
+      <div class="side-foot">
+        <div class="live" title="La página revisa cambios cada 2 segundos"><span class="dot"></span>En vivo con Claude</div>
+        <button id="disconnect" class="ghost small">Desconectar</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button id="toggle-sidebar" class="icon menu-btn" title="Menú">☰</button>
+        <h2 id="dash-title" class="dash-title" title="Clic para renombrar"></h2>
+        <div class="actions">
+          <button id="refresh" class="ghost" title="Volver a cargar los datos">⟳ Actualizar</button>
+          <button id="delete-dashboard" class="ghost danger" title="Eliminar dashboard">🗑</button>
+        </div>
+      </header>
+      <div id="empty-state" class="empty hidden">
+        <div class="empty-icon">💬</div>
+        <p><b>Este dashboard está vacío.</b></p>
+        <p>Pídele a Claude, en la app de Claude, lo que quieres ver. Por ejemplo:</p>
+        <div class="examples">
+          <code>Arma un dashboard de ventas del año</code>
+          <code>Agrega el top 10 de clientes por facturación</code>
+          <code>Cambia la gráfica de ventas a líneas</code>
+        </div>
+        <p class="muted small">Las gráficas aparecen aquí solas.</p>
+      </div>
+      <div id="no-dash" class="empty hidden">
+        <p>No tienes dashboards todavía.</p>
+        <button class="primary" id="create-first">＋ Crear dashboard</button>
+      </div>
+      <div id="grid" class="grid"></div>
+    </main>
+  </div>
+
+  <dialog id="sql-dialog" class="sql-dialog">
+    <form method="dialog">
+      <h3 id="sql-title"></h3>
+      <pre id="sql-code"></pre>
+      <div class="row end">
+        <button type="button" class="ghost" id="copy-ref" title="Copia una referencia para pegarla en el chat con Claude">Copiar referencia</button>
+        <button class="primary">Cerrar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

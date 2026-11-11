@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "dashboards": {
+      "command": "node",
+      "args": ["dashboard/mcp-server.js"]
+    }
+  }
+}
