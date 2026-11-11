@@ -52,5 +52,10 @@ Dos sesiones de Claude (servidor windows y PC Windows) clonan este mismo repo co
 - [ ] dashboard: dos conexiones (postgres solo para dashapp, claude_lector para las consultas de Claude).
 - [ ] dashboard: reescribir los dashboards existentes para leer de analytics. Hoy hay: "Ventas 2026" (10 gráficas) y 4 dashboards
       "Semana …" (12 oct – 8 nov 2026, 8 gráficas cada uno, fechas fijas). Todos consultan sap_hana_raw.
-- [ ] revisar con el negocio la semana 26 oct – 1 nov 2026: ~29.7 mil cajas pero solo $2.8 M MXN (las demás semanas $9–16 M); posible carga incompleta.
+- [ ] revisar con el negocio la semana 26 oct – 1 nov 2026: ~29.7 mil cajas pero solo $2.8 M MXN (las demás semanas $9–16 M).
+      Verificado 11-nov-2026: NO es carga incompleta. Facturas no canceladas por semana coinciden exactas entre HANA (FRONTERRA_PROTO)
+      y Postgres (15 facturas, $2,782,262). El dato es así en SAP.
+- [ ] confirmar con el negocio si FRONTERRA_PROTO es la base de producción: su última factura es del 7-nov-2026 y FASA_PROD llega
+      al 10-nov-2026. Si PROTO es copia/pruebas, cambiar sources.hana.schema en pipeline/.dlt/config.toml antes de construir dbt.
+- [ ] dashboard: db.js reintenta sin SSL si falla la conexión y no valida el certificado (rejectUnauthorized: false); exigir SSL con Railway.
 - [ ] pipeline: carga incremental por update_date y tarea programada de Windows en el servidor (hoy se corre a mano).
