@@ -1,0 +1,13 @@
+# Red de seguridad para todo el repo: credenciales nunca al repo.
+# Cada subcarpeta (pipeline/, dashboard/) tiene además su propio .gitignore.
+**/secrets.toml
+**/.env
+**/*.env
+!**/.env.example
+**/profiles.yml
+**/config.json
+**/application_default_credentials.json
+**/.venv/
+**/venv/
+**/node_modules/
+**/__pycache__/

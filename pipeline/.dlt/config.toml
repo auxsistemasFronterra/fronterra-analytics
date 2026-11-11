@@ -1,0 +1,21 @@
+[runtime]
+log_level = "INFO"
+
+# --- Origen: SAP HANA ---
+[sources.hana]
+# Esquema de HANA a leer (en mayúsculas, tal como existe en HANA)
+schema = "FRONTERRA_PROTO"
+# Tablas a cargar. Lista vacía = todas las tablas del esquema
+tables = [
+  # Ventas: pedidos, facturas y notas de crédito (encabezado + detalle)
+  "ORDR", "RDR1", "OINV", "INV1", "ORIN", "RIN1",
+  # Catálogos mínimos para interpretar ventas: clientes, artículos, vendedores
+  "OCRD", "OITM", "OSLP",
+]
+# Pendientes para después: OACT, OWHS, OITW, OPCH, PCH1, OJDT, JDT1
+# Tamaño de lote por consulta
+chunk_size = 50000
+
+# Opcional: ajustes de rendimiento
+[normalize]
+workers = 2

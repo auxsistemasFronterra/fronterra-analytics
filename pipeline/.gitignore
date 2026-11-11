@@ -1,0 +1,32 @@
+# --- Secretos / credenciales (NUNCA al repo) ---
+.dlt/secrets.toml
+secrets.toml
+.env
+*.env
+!.env.example
+profiles.yml
+config.json
+*.pem
+*.key
+credentials*.json
+application_default_credentials.json
+*service-account*.json
+
+# --- dbt ---
+target/
+dbt_packages/
+logs/
+
+# --- Python ---
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# --- Bases locales ---
+*.duckdb
+*.duckdb.wal
+
+# --- dlt local ---
+.dlt/.sources
+_storage/
