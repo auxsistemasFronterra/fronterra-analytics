@@ -35,6 +35,8 @@ npm start            # http://localhost:3000
   Requiere haber corrido `npm install` en `dashboard/`.
 
 ## Pendiente (ver CLAUDE.md raíz)
-- Usar dos conexiones: `postgres` solo para `dashapp`, y el usuario de solo lectura `claude_lector` (solo esquema `analytics` de dbt) para
+- Usar dos conexiones: `postgres` solo para `dashapp`, y un usuario de solo lectura (solo esquema `marts` de dbt) para
   `readOnlyQuery`, `listTables` y `describeTable`.
-- Reescribir los dashboards existentes (hoy leen `sap_hana_raw`) sobre las tablas de `analytics`.
+- Los dashboards actuales están marcados "[Prototipo]": leen el crudo, en MXN, con semana de lunes y desde enero. No cumplen
+  `docs/guia_desarrollo.md`. Rehacerlos sobre `marts` (USD, Semana Fronterra, desde junio de 2026) sin lógica en el SQL de la gráfica.
+- Si producción es BigQuery, el MCP (hoy solo Postgres) debe poder consultar BigQuery.

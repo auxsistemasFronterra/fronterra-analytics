@@ -66,5 +66,12 @@ copy .dlt\secrets.toml.example .dlt\secrets.toml   # y llenar credenciales reale
 - Se descartó BigQuery (la organización bloquea llaves de cuenta de servicio y el proyecto no tenía facturación).
 
 ## dbt
-**Aún no existe.** Pendiente: proyecto dbt en `pipeline/dbt/` (o similar) que lea `sap_hana_raw` y escriba
-el esquema `analytics` aplicando las reglas de datos del `CLAUDE.md` raíz. `profiles.yml` no va al repo.
+**Aún no existe.** Pendiente: proyecto dbt en `pipeline/dbt/` siguiendo `docs/guia_desarrollo.md` (secciones 4, 6 y 10):
+capas `staging` → `intermediate` → `marts` + `ref`, nombres en inglés, descripciones bilingües, una prueba por modelo y SQL
+portable entre PostgreSQL y BigQuery. `profiles.yml` no va al repo.
+
+## Brecha contra la guía (12-nov-2026)
+- El destino se llama `sap_hana_raw`; la guía pide `raw_sap_fasa` y `raw_sap_fgi`.
+- Se cargan 9 tablas; la sección 5 de la guía pide ~40 (más `OITB`, que usa el Anexo A) para FASA y FGI.
+- Carga `replace` a mano; la guía pide incremental con ventana, recarga completa diaria de catálogos y fotos diarias de `OITW`, CxP y CxC.
+- Falta la segunda instancia de dlt para la base MS SQL de costeo de maquila (máquina en sitio).
