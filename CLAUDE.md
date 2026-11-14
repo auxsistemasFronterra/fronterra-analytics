@@ -12,6 +12,9 @@ fronterra-analytics/
 ├── CLAUDE.md               este archivo
 ├── docs/guia_desarrollo.md guía del Digital Hub Fase 1 (fuente de verdad)
 ├── docs/notas_prototipo.md hallazgos del prototipo de ventas (NO son reglas)
+├── docs/traspaso.md        cómo retomar en otro equipo y dónde quedó todo
+├── docs/preguntas_omar.md  preguntas que bloquean (sin respuesta registrada)
+├── docs/prompt_servidor_tablas.md  prompt de tablas y conexiones para el servidor
 ├── .mcp.json               registra el servidor MCP "dashboards" (node dashboard/mcp-server.js)
 ├── pipeline/               Python + dlt (SAP HANA → Postgres) y dbt — ver pipeline/CLAUDE.md
 └── dashboard/              app de dashboards + servidor MCP (Node 24) — ver dashboard/CLAUDE.md

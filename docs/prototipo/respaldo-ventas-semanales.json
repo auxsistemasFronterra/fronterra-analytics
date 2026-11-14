@@ -1,0 +1,82 @@
+{
+  "id": 7,
+  "name": "Ventas semanales",
+  "widgets": [
+    {
+      "y": [
+        "ventas"
+      ],
+      "id": "d4909f57",
+      "sql": "SELECT round(coalesce(sum(l.line_total), 0)) AS ventas\nFROM sap_hana_raw.inv1 l\nJOIN sap_hana_raw.oinv h ON h.doc_entry = l.doc_entry\nWHERE h.canceled = 'N' AND l.item_code IS NOT NULL\n  AND h.doc_date >= date_trunc('week', now()) - interval '7 days'\n  AND h.doc_date <  date_trunc('week', now())",
+      "size": 2,
+      "type": "number",
+      "title": "Ventas semana pasada (MXN)"
+    },
+    {
+      "y": [
+        "entregas"
+      ],
+      "id": "6bc2dd77",
+      "sql": "SELECT count(*) AS entregas FROM (\n  SELECT l.base_entry,\n         min(CASE WHEN l.ship_date BETWEEN h.doc_date - interval '60 days' AND h.doc_date + interval '60 days'\n                  THEN l.ship_date ELSE h.doc_date END) AS fecha\n  FROM sap_hana_raw.inv1 l\n  JOIN sap_hana_raw.oinv h ON h.doc_entry = l.doc_entry\n  WHERE h.canceled = 'N' AND l.base_type = 15\n  GROUP BY l.base_entry\n) e\nWHERE e.fecha >= date_trunc('week', now()) - interval '7 days'\n  AND e.fecha <  date_trunc('week', now())",
+      "size": 2,
+      "type": "number",
+      "title": "Entregas semana pasada"
+    },
+    {
+      "y": [
+        "cajas"
+      ],
+      "id": "2081b571",
+      "sql": "SELECT round(coalesce(sum(l.quantity), 0)) AS cajas\nFROM sap_hana_raw.inv1 l\nJOIN sap_hana_raw.oinv h ON h.doc_entry = l.doc_entry\nWHERE h.canceled = 'N' AND l.unit_msr = 'CAJA'\n  AND h.doc_date >= date_trunc('week', now()) - interval '7 days'\n  AND h.doc_date <  date_trunc('week', now())",
+      "size": 2,
+      "type": "number",
+      "title": "Cajas vendidas semana pasada"
+    },
+    {
+      "x": "semana",
+      "y": [
+        "importe"
+      ],
+      "id": "9f12f944",
+      "sql": "WITH v AS (\n  SELECT date_trunc('week', h.doc_date)::date AS semana,\n         substring(coalesce(i.item_name, l.dscription) from '^[^0-9]{0,4}([0-9]+) ') AS calibre,\n         l.line_total\n  FROM sap_hana_raw.inv1 l\n  JOIN sap_hana_raw.oinv h ON h.doc_entry = l.doc_entry\n  LEFT JOIN sap_hana_raw.oitm i ON i.item_code = l.item_code\n  WHERE h.canceled = 'N' AND l.item_code IS NOT NULL\n), top AS (\n  SELECT calibre FROM v WHERE calibre IS NOT NULL\n  GROUP BY 1 ORDER BY sum(line_total) DESC LIMIT 7\n)\nSELECT to_char(v.semana, 'YYYY-MM-DD') AS semana,\n       CASE WHEN t.calibre IS NULL THEN 'Otros' ELSE 'Calibre ' || v.calibre END AS producto,\n       round(sum(v.line_total)) AS importe\nFROM v LEFT JOIN top t ON t.calibre = v.calibre\nGROUP BY 1, 2 ORDER BY 1, 2",
+      "size": 6,
+      "type": "bar",
+      "title": "Ventas por calibre por semana (MXN)",
+      "series": "producto",
+      "stacked": true
+    },
+    {
+      "x": "semana",
+      "y": [
+        "cajas"
+      ],
+      "id": "ce6202b5",
+      "sql": "WITH v AS (\n  SELECT date_trunc('week', h.doc_date)::date AS semana,\n         substring(coalesce(i.item_name, l.dscription) from '^[^0-9]{0,4}([0-9]+) ') AS calibre,\n         l.quantity, l.line_total\n  FROM sap_hana_raw.inv1 l\n  JOIN sap_hana_raw.oinv h ON h.doc_entry = l.doc_entry\n  LEFT JOIN sap_hana_raw.oitm i ON i.item_code = l.item_code\n  WHERE h.canceled = 'N' AND l.unit_msr = 'CAJA'\n), top AS (\n  SELECT calibre FROM v WHERE calibre IS NOT NULL\n  GROUP BY 1 ORDER BY sum(line_total) DESC LIMIT 7\n)\nSELECT to_char(v.semana, 'YYYY-MM-DD') AS semana,\n       CASE WHEN t.calibre IS NULL THEN 'Otros' ELSE 'Calibre ' || v.calibre END AS producto,\n       round(sum(v.quantity)) AS cajas\nFROM v LEFT JOIN top t ON t.calibre = v.calibre\nGROUP BY 1, 2 ORDER BY 1, 2",
+      "size": 6,
+      "type": "bar",
+      "title": "Cajas por calibre por semana",
+      "series": "producto",
+      "stacked": true
+    },
+    {
+      "x": "semana",
+      "y": [
+        "entregas"
+      ],
+      "id": "09f3d386",
+      "sql": "SELECT to_char(date_trunc('week', e.fecha), 'YYYY-MM-DD') AS semana, count(*) AS entregas\nFROM (\n  -- fecha de entrega: ship_date de la línea; si es incoherente (más de 60 días de la factura), la fecha de factura\n  SELECT l.base_entry,\n         min(CASE WHEN l.ship_date BETWEEN h.doc_date - interval '60 days' AND h.doc_date + interval '60 days'\n                  THEN l.ship_date ELSE h.doc_date END) AS fecha\n  FROM sap_hana_raw.inv1 l\n  JOIN sap_hana_raw.oinv h ON h.doc_entry = l.doc_entry\n  WHERE h.canceled = 'N' AND l.base_type = 15\n  GROUP BY l.base_entry\n) e\nGROUP BY 1 ORDER BY 1",
+      "size": 6,
+      "type": "bar",
+      "title": "Entregas por semana"
+    },
+    {
+      "y": [],
+      "id": "763c4251",
+      "sql": "SELECT to_char(date_trunc('week', h.doc_date), 'YYYY-MM-DD') AS semana,\n       l.item_code AS codigo,\n       coalesce(max(i.item_name), max(l.dscription)) AS producto,\n       count(DISTINCT l.base_entry) FILTER (WHERE l.base_type = 15) AS entregas,\n       round(sum(l.quantity)) AS cantidad,\n       max(l.unit_msr) AS unidad,\n       round(sum(l.line_total)) AS importe_mxn\nFROM sap_hana_raw.inv1 l\nJOIN sap_hana_raw.oinv h ON h.doc_entry = l.doc_entry\nLEFT JOIN sap_hana_raw.oitm i ON i.item_code = l.item_code\nWHERE h.canceled = 'N' AND l.item_code IS NOT NULL\n  AND h.doc_date >= date_trunc('week', now()) - interval '28 days'\nGROUP BY 1, 2\nORDER BY 1 DESC, importe_mxn DESC",
+      "size": 6,
+      "type": "table",
+      "title": "Detalle por producto, últimas 4 semanas"
+    }
+  ],
+  "updated_at": "2026-11-10T21:29:33.258Z"
+}
