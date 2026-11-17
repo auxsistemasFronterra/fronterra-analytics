@@ -6,7 +6,7 @@ Contexto compartido para las sesiones de Claude que trabajan en este repo. Léel
 fronterra-analytics/
 ├── CLAUDE.md      este archivo (contexto compartido)
 ├── .mcp.json      registra el servidor MCP "dashboards" (node dashboard/mcp-server.js)
-├── pipeline/      Python + dlt (SAP HANA → Postgres) y luego dbt — ver pipeline/CLAUDE.md
+├── pipeline/      Python + dlt (SAP HANA → BigQuery / Postgres) y luego dbt — ver pipeline/CLAUDE.md
 └── dashboard/     app de dashboards + servidor MCP (Node 24) — ver dashboard/CLAUDE.md
 ```
 
@@ -16,6 +16,9 @@ Las secciones Arquitectura, Reglas y Decisiones de este archivo también se le p
 ## Arquitectura
 SAP HANA → dlt (pipeline/) → Postgres en Railway (base hanaDB, esquema sap_hana_raw = datos crudos) → dbt (pipeline/) → esquema analytics (datos curados) → app de dashboards (dashboard/): página web en localhost:3000 + servidor MCP para que Claude consulte y cree gráficas. Los dashboards se guardan en el esquema dashapp.
 
+- **Desde 17-nov-2026 el destino por defecto del pipeline es BigQuery**: proyecto `bigquery-515016`, dataset `sap_hana_raw`,
+  región `northamerica-south1`, mismas tablas y nombres que en Postgres. Postgres (hanaDB.sap_hana_raw) sigue disponible con
+  `--destination postgres` y es lo que usa hoy el dashboard, pero ya no se actualiza solo. Ver pendiente "decidir destino".
 - Origen: SAP Business One sobre SAP HANA on-premise, esquema `FRONTERRA_PROTO`. HANA solo es accesible desde la red interna (servidor Windows); la PC externa no puede correr el pipeline contra HANA.
 - El pipeline hoy hace reemplazo completo de 9 tablas de ventas y se corre a mano (sin tarea programada). Detalle en `pipeline/CLAUDE.md`.
 - En Postgres las tablas y columnas están en minúsculas snake_case (`DocEntry` → `doc_entry`). Postgres usa `LIMIT`, no `TOP`.
@@ -37,7 +40,9 @@ SAP HANA → dlt (pipeline/) → Postgres en Railway (base hanaDB, esquema sap_h
 ## Decisiones
 - Crear con dbt un esquema analytics con tablas curadas que ya apliquen las reglas de arriba (ventas por línea, entregas, clientes unificados, artículos con calibre).
 - Claude (servidor MCP del dashboard) consultará con un usuario de Postgres de solo lectura, claude_lector, con acceso SOLO a analytics: sin acceso a sap_hana_raw ni dashapp y sin permisos de escritura. Hoy la app usa el superusuario postgres; eso se cambia.
-- Destino Postgres en Railway en vez de BigQuery (la organización bloquea llaves de cuenta de servicio de GCP y el proyecto no tenía facturación).
+- 11-nov-2026: destino Postgres en Railway (el primer proyecto de GCP bloqueaba llaves de cuenta de servicio y no tenía facturación).
+- 17-nov-2026: el usuario pidió cambiar a BigQuery con un proyecto nuevo (`bigquery-515016`, cuenta de servicio `dlt-bigquery`,
+  con facturación). El pipeline carga ahí por defecto; Postgres se conserva como destino opcional.
 
 ## Cómo trabajamos
 Dos sesiones de Claude (servidor windows y PC Windows) clonan este mismo repo completo y pueden trabajar en pipeline/ y dashboard/.
@@ -47,6 +52,11 @@ Dos sesiones de Claude (servidor windows y PC Windows) clonan este mismo repo co
 - Nunca subir credenciales (secrets.toml, .env, config.json, profiles.yml).
 
 ## Pendientes
+- [ ] DECIDIR destino definitivo (afecta dbt y dashboard): ¿analytics en BigQuery o en Postgres? El dashboard y su MCP hoy solo hablan
+      Postgres (`pg`) y claude_lector es un usuario de Postgres. Opciones: (a) todo en BigQuery: dashboard con cliente BigQuery y una
+      cuenta de servicio de solo lectura (rol BigQuery Data Viewer solo sobre el dataset analytics + Job User); dashapp puede quedarse en
+      Postgres. (b) BigQuery solo como copia cruda y dbt/analytics en Postgres. Mientras tanto, para refrescar Postgres:
+      `python hana_pipeline.py --destination postgres`.
 - [ ] pipeline: proyecto dbt con modelos en analytics.
 - [ ] pipeline: script SQL que crea claude_lector (solo lectura, solo analytics, con default privileges para tablas nuevas de dbt). La contraseña la pone el usuario, no va al repo.
 - [ ] dashboard: dos conexiones (postgres solo para dashapp, claude_lector para las consultas de Claude).
