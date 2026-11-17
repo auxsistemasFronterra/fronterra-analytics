@@ -1,6 +1,14 @@
 [runtime]
 log_level = "INFO"
 
+# --- Destino por defecto: "bigquery" o "postgres" (se puede forzar con --destination) ---
+[fronterra]
+destination = "bigquery"
+
+# --- BigQuery: proyecto bigquery-515016, dataset sap_hana_raw ---
+[destination.bigquery]
+location = "northamerica-south1"
+
 # --- Origen: SAP HANA ---
 [sources.hana]
 # Esquema de HANA a leer (en mayúsculas, tal como existe en HANA)

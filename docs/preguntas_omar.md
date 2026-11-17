@@ -11,6 +11,8 @@ Estado: redactadas, **sin respuesta registrada**. Anotar aquí la respuesta de c
    no se puede empezar la Fase B (consolidado y eliminaciones).
 3. **BigQuery.** La guía lo pone como producción a mediados de diciembre, pero la organización bloquea las llaves de cuenta de
    servicio de GCP y el proyecto no tenía facturación activa. ¿Quién resuelve el acceso y la facturación?
+   *Avance 17-nov-2026:* ya hay un proyecto nuevo con facturación (`bigquery-515016`) y el pipeline carga ahí las 9 tablas. Falta
+   confirmar si ese proyecto es el de producción de la organización y si `marts` (dbt) vive en BigQuery o en Railway.
 4. **"Paneles de Claude".** ¿Se refiere a la app de dashboards que ya tenemos (página web propia conectada a Claude, que hoy solo
    corre en una computadora local) o a otra cosa? Si es la app, hay que definir dónde se publica y cómo entran los directores.
 5. **Costeo de maquila.** La guía pide una segunda instancia de dlt en una máquina de la oficina para leer la base MS SQL. ¿Qué

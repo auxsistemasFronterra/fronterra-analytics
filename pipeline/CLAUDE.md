@@ -1,20 +1,23 @@
-# pipeline/ — SAP HANA → Postgres (dlt) y después dbt
+# pipeline/ — SAP HANA → BigQuery / Postgres (dlt) y después dbt
 
 Lee también el `CLAUDE.md` de la raíz del repo (arquitectura, reglas de datos SAP B1, pendientes).
 
 ## Qué hace
-`hana_to_postgres.py` usa **dlt** (`sql_database`, backend `pyarrow`) para copiar tablas de SAP Business One
-desde SAP HANA a PostgreSQL en Railway.
+`hana_pipeline.py` usa **dlt** (`sql_database`, backend `pyarrow`) para copiar tablas de SAP Business One
+desde SAP HANA a **BigQuery** (destino por defecto) o a **PostgreSQL en Railway**.
 
 - **Origen:** SAP HANA 2.0 on-premise (host y puerto en `.dlt/secrets.toml`, base `NDB`), esquema **`FRONTERRA_PROTO`**
   (configurable en `.dlt/config.toml` → `sources.hana.schema`). Solo es accesible desde la red interna
   (el servidor Windows `ftruser16`); desde fuera de la red el pipeline no conecta a HANA.
-- **Destino:** Postgres 18 en Railway, base **`hanaDB`**, esquema **`sap_hana_raw`** (datos crudos).
-- Nombre del pipeline dlt: `hana_to_postgres`.
+- **Destino por defecto:** `.dlt/config.toml` → `[fronterra] destination = "bigquery"`. Se fuerza con `--destination bigquery|postgres`.
+  - **BigQuery:** proyecto `bigquery-515016`, dataset **`sap_hana_raw`**, región `northamerica-south1`,
+    cuenta de servicio `dlt-bigquery@bigquery-515016.iam.gserviceaccount.com` (llave en `secrets.toml`). Pipeline dlt `hana_to_bigquery`.
+  - **Postgres:** Postgres 18 en Railway, base **`hanaDB`**, esquema **`sap_hana_raw`**. Pipeline dlt `hana_to_postgres`.
+    Es lo que lee hoy el dashboard; solo se actualiza si se corre con `--destination postgres`.
 
-## Tablas que carga (esquema `sap_hana_raw`)
+## Tablas que carga (`sap_hana_raw`, igual en ambos destinos)
 Lista en `.dlt/config.toml` → `sources.hana.tables`. Modo actual: **reemplazo completo** (`write_disposition="replace"`)
-en cada corrida (~19.6 mil filas, ~15 s de carga).
+en cada corrida (~19.6 mil filas; ~30 s en BigQuery, ~15 s en Postgres).
 
 | Tabla | Contenido | Filas aprox. (nov-2026) |
 |---|---|---|
@@ -27,8 +30,8 @@ en cada corrida (~19.6 mil filas, ~15 s de carga).
 
 Pendientes de agregar cuando haga falta: OACT, OWHS, OITW, OPCH, PCH1, OJDT, JDT1 (JDT1 ≈ 2 M filas).
 
-- Nombres en Postgres: tablas y columnas en minúsculas snake_case (`DocEntry` → `doc_entry`, `CardCode` → `card_code`).
-  Importes = `numeric`, fechas = `timestamp`.
+- Nombres: tablas y columnas en minúsculas snake_case (`DocEntry` → `doc_entry`, `CardCode` → `card_code`).
+  Postgres: importes `numeric`, fechas `timestamp`. BigQuery: importes `NUMERIC`/`BIGNUMERIC`, fechas `TIMESTAMP`.
 - dlt agrega `_dlt_load_id` y `_dlt_id` a cada tabla y crea `_dlt_loads`, `_dlt_version`, `_dlt_pipeline_state` (ignorarlas en análisis).
 
 ## Instalar
@@ -43,9 +46,10 @@ copy .dlt\secrets.toml.example .dlt\secrets.toml   # y llenar credenciales reale
 
 ## Correr
 ```bash
-.venv\Scripts\python.exe hana_to_postgres.py            # carga completa (replace)
-.venv\Scripts\python.exe hana_to_postgres.py --test     # solo prueba conexión a HANA y lista esquemas/tablas
-.venv\Scripts\python.exe hana_to_postgres.py --incremental   # merge por cursor; requiere llenar el dict INCREMENTAL del script
+.venv\Scripts\python.exe hana_pipeline.py                          # carga completa (replace) al destino por defecto (BigQuery)
+.venv\Scripts\python.exe hana_pipeline.py --destination postgres   # carga completa a Postgres (Railway)
+.venv\Scripts\python.exe hana_pipeline.py --test                   # solo prueba conexión a HANA y lista esquemas/tablas
+.venv\Scripts\python.exe hana_pipeline.py --incremental            # merge por cursor; requiere llenar el dict INCREMENTAL del script
 ```
 
 ## Dónde y cada cuánto se ejecuta
@@ -54,21 +58,24 @@ copy .dlt\secrets.toml.example .dlt\secrets.toml   # y llenar credenciales reale
 - Siguiente paso previsto: carga incremental por `update_date` (tablas B1 la tienen) y una tarea programada de Windows.
 
 ## Secretos
-- `.dlt/secrets.toml` (credenciales HANA + cadena de conexión de Railway) está en `.gitignore`. Plantillas sin valores:
-  `.dlt/secrets.toml.example` y `.env.example` (dlt también lee variables de entorno tipo `SOURCES__HANA__CREDENTIALS__PASSWORD`).
-- El estado local de dlt vive en `%USERPROFILE%\.dlt\pipelines\hana_to_postgres` (por máquina, no va al repo).
+- `.dlt/secrets.toml` (credenciales HANA, cadena de conexión de Railway y llave de la cuenta de servicio de BigQuery) está en
+  `.gitignore`. Plantillas sin valores: `.dlt/secrets.toml.example` y `.env.example`
+  (dlt también lee variables de entorno tipo `SOURCES__HANA__CREDENTIALS__PASSWORD`).
+- El estado local de dlt vive en `%USERPROFILE%\.dlt\pipelines\hana_to_<destino>` (por máquina, no va al repo).
 
 ## Detalles técnicos que ya costaron tiempo
 - **HANA sin TLS:** con `encrypt=true` falla (`Invalid flags specified` / `No valid certificate`). Usar `encrypt = "false"`.
 - **Mayúsculas:** `sqlalchemy-hana` necesita nombres en minúsculas para identificadores HANA en MAYÚSCULAS. El script
   convierte (`_sa_name`), así que en `config.toml` se escriben en mayúsculas como en HANA.
-- `TOP` no existe en Postgres: usar `LIMIT`. Columnas SAP en snake_case.
-- Se descartó BigQuery (la organización bloquea llaves de cuenta de servicio y el proyecto no tenía facturación).
+- `TOP` no existe ni en Postgres ni en BigQuery: usar `LIMIT`. Columnas SAP en snake_case.
+- BigQuery: la región del dataset no se puede cambiar después de creado (`northamerica-south1`). DML requiere facturación
+  (el proyecto `bigquery-515016` la tiene; el primer proyecto de GCP no, por eso se usó Postgres al principio).
 
 ## dbt
 **Aún no existe.** Pendiente: proyecto dbt en `pipeline/dbt/` siguiendo `docs/guia_desarrollo.md` (secciones 4, 6 y 10):
 capas `staging` → `intermediate` → `marts` + `ref`, nombres en inglés, descripciones bilingües, una prueba por modelo y SQL
-portable entre PostgreSQL y BigQuery. `profiles.yml` no va al repo.
+portable entre PostgreSQL y BigQuery. Antes hay que decidir si `marts` vive en BigQuery o en Postgres (pendiente en el
+`CLAUDE.md` raíz). `profiles.yml` no va al repo.
 
 ## Brecha contra la guía (12-nov-2026)
 - El destino se llama `sap_hana_raw`; la guía pide `raw_sap_fasa` y `raw_sap_fgi`.

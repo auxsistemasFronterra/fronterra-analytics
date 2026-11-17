@@ -1,6 +1,7 @@
-dlt[postgres,sql_database]==1.32.0
+dlt[bigquery,postgres,sql_database]==1.32.0
 SQLAlchemy==2.1.8
 sqlalchemy-hana==5.0.0
 hdbcli==2.30.27
 pyarrow==26.0.1
 psycopg2-binary==2.9.13
+google-cloud-bigquery==3.47.0

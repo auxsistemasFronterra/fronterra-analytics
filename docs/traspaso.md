@@ -5,6 +5,10 @@ conversaciones de Claude **no** se transfieren entre equipos.
 
 ## Dónde quedó todo
 - **Rama de trabajo: `alinear-con-guia`** (en GitHub). `main` todavía tiene las reglas viejas del prototipo; no se ha hecho merge.
+- 17-nov-2026: la sesión del servidor subió directo a `main` el cambio a BigQuery (`449a8bd`, `pipeline/hana_pipeline.py`).
+  Ese commit ya se unió a `alinear-con-guia`, así que la rama tiene todo. Ojo: entró a `main` sin revisión.
+- 17-nov-2026: la PC nueva (`C:\Users\FR-LiderSistemas\Documents\DiscoDuro\Experimentos\fronterra-analytics`) quedó clonada y
+  conectada a GitHub, con `npm install` hecho, `dashboard/config.json` puesto y el MCP `dashboards` conectado.
 - La guía del director: `docs/guia_desarrollo.md`. Manda sobre todo lo demás.
 - Estado real, reglas y pendientes: `CLAUDE.md` raíz.
 - Preguntas para Omar (sin respuesta registrada): `docs/preguntas_omar.md`.

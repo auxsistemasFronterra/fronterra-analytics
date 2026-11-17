@@ -1,9 +1,12 @@
-"""Pipeline dlt: SAP HANA -> PostgreSQL (Railway).
+"""Pipeline dlt: SAP HANA -> BigQuery o PostgreSQL (Railway).
+
+El destino por defecto está en .dlt/config.toml ([fronterra] destination); se puede forzar con --destination.
 
 Uso:
-    python hana_to_postgres.py                  # carga completa (replace) de las tablas en config.toml
-    python hana_to_postgres.py --incremental    # carga incremental (merge) usando las columnas de INCREMENTAL
-    python hana_to_postgres.py --test           # solo prueba la conexión a HANA y lista tablas
+    python hana_pipeline.py                          # carga completa (replace) al destino por defecto
+    python hana_pipeline.py --destination postgres   # carga completa a Postgres (Railway)
+    python hana_pipeline.py --incremental            # carga incremental (merge) usando las columnas de INCREMENTAL
+    python hana_pipeline.py --test                   # solo prueba la conexión a HANA y lista tablas
 """
 
 import argparse
@@ -14,14 +17,18 @@ from dlt.sources.credentials import ConnectionStringCredentials
 from dlt.sources.sql_database import sql_database, sql_table
 
 # Configura aquí las tablas incrementales: tabla -> (columna de cursor, llave primaria)
-# Ejemplo: "VBAK": ("AEDAT", ["VBELN"])
+# Ejemplo: "OINV": ("UpdateDate", ["DocEntry"])
 INCREMENTAL: dict[str, tuple[str, list[str]]] = {
     # "MI_TABLA": ("FECHA_MODIFICACION", ["ID"]),
 }
 
-PIPELINE_NAME = "hana_to_postgres"
-DESTINATION = "postgres"
-DATASET_NAME = "sap_hana_raw"  # esquema de Postgres (se crea si no existe)
+DESTINATIONS = ("bigquery", "postgres")
+DATASET_NAME = "sap_hana_raw"  # dataset de BigQuery / esquema de Postgres (se crea si no existe)
+
+
+def make_pipeline(destination: str) -> dlt.Pipeline:
+    # Un pipeline (y estado local) por destino: hana_to_bigquery, hana_to_postgres
+    return dlt.pipeline(pipeline_name=f"hana_to_{destination}", destination=destination, dataset_name=DATASET_NAME)
 
 
 def hana_credentials() -> ConnectionStringCredentials:
@@ -67,7 +74,7 @@ def test_connection() -> None:
             print(f"  {name:<40} {count:>12}")
 
 
-def run_full() -> None:
+def run_full(destination: str) -> None:
     cfg = hana_config()
     source = sql_database(
         credentials=hana_credentials(),
@@ -77,12 +84,11 @@ def run_full() -> None:
         chunk_size=cfg["chunk_size"],
         reflection_level="full_with_precision",
     )
-    pipeline = dlt.pipeline(pipeline_name=PIPELINE_NAME, destination=DESTINATION, dataset_name=DATASET_NAME)
-    info = pipeline.run(source, write_disposition="replace")
+    info = make_pipeline(destination).run(source, write_disposition="replace")
     print(info)
 
 
-def run_incremental() -> None:
+def run_incremental(destination: str) -> None:
     if not INCREMENTAL:
         raise SystemExit("Define al menos una tabla en INCREMENTAL antes de usar --incremental")
     cfg = hana_config()
@@ -100,8 +106,7 @@ def run_incremental() -> None:
         )
         res.apply_hints(primary_key=pk, write_disposition="merge")
         resources.append(res)
-    pipeline = dlt.pipeline(pipeline_name=PIPELINE_NAME, destination=DESTINATION, dataset_name=DATASET_NAME)
-    info = pipeline.run(resources)
+    info = make_pipeline(destination).run(resources)
     print(info)
 
 
@@ -110,11 +115,14 @@ if __name__ == "__main__":
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--test", action="store_true", help="probar conexión a HANA")
     group.add_argument("--incremental", action="store_true", help="carga incremental (merge)")
+    parser.add_argument("--destination", choices=DESTINATIONS, default=None,
+                        help="destino; por defecto [fronterra] destination de config.toml")
     args = parser.parse_args()
+    destination = args.destination or dlt.config.get("fronterra.destination") or "bigquery"
 
     if args.test:
         test_connection()
     elif args.incremental:
-        run_incremental()
+        run_incremental(destination)
     else:
-        run_full()
+        run_full(destination)

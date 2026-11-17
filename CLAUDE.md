@@ -16,7 +16,7 @@ fronterra-analytics/
 ├── docs/preguntas_omar.md  preguntas que bloquean (sin respuesta registrada)
 ├── docs/prompt_servidor_tablas.md  prompt de tablas y conexiones para el servidor
 ├── .mcp.json               registra el servidor MCP "dashboards" (node dashboard/mcp-server.js)
-├── pipeline/               Python + dlt (SAP HANA → Postgres) y dbt — ver pipeline/CLAUDE.md
+├── pipeline/               Python + dlt (SAP HANA → BigQuery / Postgres) y dbt — ver pipeline/CLAUDE.md
 └── dashboard/              app de dashboards + servidor MCP (Node 24) — ver dashboard/CLAUDE.md
 ```
 
@@ -44,6 +44,11 @@ SAP B1 HANA (FASA y FGI) → dlt (pipeline/) → PostgreSQL en Railway (desarrol
 Capas (guía, sección 4): `raw_sap_fasa`, `raw_sap_fgi` (crudo) → `staging` (`stg_sap__*`) → `intermediate` (`int_*`) → `marts`
 (`fct_*`, `dim_*`) + `ref` (tablas de Finanzas/Calidad).
 
+- **Desde 17-nov-2026 el pipeline carga por defecto a BigQuery** (commit en `main` desde el servidor): proyecto `bigquery-515016`,
+  dataset `sap_hana_raw`, región `northamerica-south1`, las mismas 9 tablas y nombres que en Postgres (conteos idénticos a HANA).
+  Postgres (`hanaDB.sap_hana_raw`) sigue disponible con `--destination postgres` y es lo que lee hoy el dashboard, pero ya no se
+  actualiza solo. El script se llama ahora `pipeline/hana_pipeline.py`.
+
 Estado real al 12-nov-2026:
 - Solo existe el esquema crudo `sap_hana_raw` (se renombrará a `raw_sap_fasa`) con 9 tablas de ventas de FASA: oinv, inv1, orin,
   rin1, ordr, rdr1, ocrd, oitm, oslp. Carga completa a mano, sin tarea programada. Faltan ~30 tablas de la sección 5 de la guía
@@ -59,8 +64,9 @@ Estado real al 12-nov-2026:
 ## Decisiones
 - La guía `docs/guia_desarrollo.md` reemplaza las reglas del prototipo (movidas a `docs/notas_prototipo.md`).
 - El conector de Claude usará un usuario de solo lectura con acceso solo a `marts`. Hoy la app usa el superusuario postgres; eso se cambia.
-- Railway primero (la organización bloqueaba llaves de cuenta de servicio de GCP y el proyecto no tenía facturación); BigQuery
-  cuando eso se resuelva.
+- 11-nov-2026: destino Postgres en Railway (el primer proyecto de GCP bloqueaba llaves de cuenta de servicio y no tenía facturación).
+- 17-nov-2026: el usuario pidió cambiar a BigQuery con un proyecto nuevo (`bigquery-515016`, cuenta de servicio `dlt-bigquery`,
+  con facturación). El pipeline carga ahí por defecto; Postgres se conserva como destino opcional.
 - Todo cambio entra como rama/propuesta en Git y otra persona lo revisa antes de unirlo a `main`.
 
 ## Cómo trabajamos
@@ -74,9 +80,16 @@ Dos sesiones de Claude (servidor Windows y PC Windows) clonan este mismo repo co
 Preguntas para Omar (bloquean):
 - [ ] ¿`FRONTERRA_PROTO` o `FASA_PROD` es la base de producción de FASA? (PROTO llega al 7-nov-2026, FASA_PROD al 10-nov-2026.)
 - [ ] Usuario de solo lectura para el SAP de FGI.
-- [ ] Quién resuelve el acceso y la facturación de GCP para BigQuery (mediados de diciembre).
+- [ ] BigQuery ya tiene proyecto con facturación (`bigquery-515016`). Falta decidir: ¿`marts` vive en BigQuery o en Railway, y
+      BigQuery ya es producción o sigue siendo prueba? (Ver "Decidir destino" abajo.)
 - [ ] ¿"Paneles de Claude" es la app de `dashboard/` o los artefactos de claude.ai? La app hoy corre en localhost.
 - [ ] Máquina en sitio para la segunda instancia de dlt (base MS SQL de costeo de maquila).
+
+Decidir destino (afecta dbt y dashboard):
+- [ ] ¿dbt/`marts` en BigQuery o en Postgres? El dashboard y su MCP hoy solo hablan Postgres (`pg`). Opciones: (a) todo en BigQuery:
+      MCP con cliente BigQuery y cuenta de servicio de solo lectura (BigQuery Data Viewer solo sobre `marts` + Job User); `dashapp`
+      puede quedarse en Postgres. (b) BigQuery solo como copia cruda y dbt/`marts` en Postgres. Mientras tanto, para refrescar
+      Postgres: `python hana_pipeline.py --destination postgres`.
 
 pipeline (dlt):
 - [ ] Renombrar el destino a `raw_sap_fasa` y agregar las tablas de la sección 5 de la guía + `OITB`.
