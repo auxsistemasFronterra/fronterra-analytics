@@ -68,6 +68,8 @@ Estado real al 12-nov-2026:
 - 17-nov-2026: el usuario pidió cambiar a BigQuery con un proyecto nuevo (`bigquery-515016`, cuenta de servicio `dlt-bigquery`,
   con facturación). El pipeline carga ahí por defecto; Postgres se conserva como destino opcional.
 - Todo cambio entra como rama/propuesta en Git y otra persona lo revisa antes de unirlo a `main`.
+- 17-nov-2026: el repositorio de GitHub es **público** y el usuario decidió dejarlo así. Todo lo que se suba lo puede ver
+  cualquiera: nunca subir credenciales, datos de clientes ni resultados de consultas.
 
 ## Cómo trabajamos
 Dos sesiones de Claude (servidor Windows y PC Windows) clonan este mismo repo completo y pueden trabajar en pipeline/ y dashboard/.
