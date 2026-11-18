@@ -16,7 +16,7 @@ fronterra-analytics/
 ├── docs/preguntas_omar.md  preguntas que bloquean (sin respuesta registrada)
 ├── docs/prompt_servidor_tablas.md  prompt de tablas y conexiones para el servidor
 ├── .mcp.json               registra el servidor MCP "dashboards" (node dashboard/mcp-server.js)
-├── pipeline/               Python + dlt (SAP HANA → BigQuery / Postgres) y dbt — ver pipeline/CLAUDE.md
+├── pipeline/               Python + dlt (SAP HANA → BigQuery) y dbt — ver pipeline/CLAUDE.md
 └── dashboard/              app de dashboards + servidor MCP (Node 24) — ver dashboard/CLAUDE.md
 ```
 
@@ -35,19 +35,22 @@ Las secciones Arquitectura, Reglas y Decisiones de este archivo también se le p
 - Semanas: Semana Fronterra (domingo a sábado, numeración gregoriana) desde `dim_date`. No usar `date_trunc('week')`.
 - Tablero en USD con las columnas de moneda de sistema de SAP (`*_sy`, `sys_deb`, `sys_cred`). Todo empieza el 1 de junio de 2026.
 - Unir documentos por `doc_entry`, nunca por `doc_num`. Excluir cancelados (`canceled = 'N'`).
-- Railway es desarrollo: nadie toma decisiones con esos datos.
+- Todo vive en BigQuery (decisión 18-nov-2026, ver Decisiones). Railway se retira: no construir nada nuevo sobre Postgres y
+  nadie toma decisiones con los datos que quedan ahí.
 
 ## Arquitectura
-SAP B1 HANA (FASA y FGI) → dlt (pipeline/) → PostgreSQL en Railway (desarrollo; BigQuery será producción) → dbt Core (pipeline/)
-→ `marts` → paneles de Claude (dashboard/: página + servidor MCP) y, después del 8 de enero, Lightdash.
+SAP B1 HANA (FASA y FGI) → dlt (pipeline/) → **BigQuery** (proyecto `bigquery-515016`, región `northamerica-south1`) → dbt Core
+(pipeline/) → `marts` → paneles de Claude (dashboard/: página + servidor MCP) y, después del 8 de enero, Lightdash.
+Los dashboards de la app también se guardarán en BigQuery (dataset `dashapp`). PostgreSQL en Railway se retira (ver Pendientes).
+Esto se desvía de la sección 3 de la guía (Railway = desarrollo); pendiente de aprobación de Omar.
 
 Capas (guía, sección 4): `raw_sap_fasa`, `raw_sap_fgi` (crudo) → `staging` (`stg_sap__*`) → `intermediate` (`int_*`) → `marts`
 (`fct_*`, `dim_*`) + `ref` (tablas de Finanzas/Calidad).
 
 - **Desde 17-nov-2026 el pipeline carga por defecto a BigQuery** (commit en `main` desde el servidor): proyecto `bigquery-515016`,
   dataset `sap_hana_raw`, región `northamerica-south1`, las mismas 9 tablas y nombres que en Postgres (conteos idénticos a HANA).
-  Postgres (`hanaDB.sap_hana_raw`) sigue disponible con `--destination postgres` y es lo que lee hoy el dashboard, pero ya no se
-  actualiza solo. El script se llama ahora `pipeline/hana_pipeline.py`.
+  Postgres (`hanaDB.sap_hana_raw`) es lo que lee hoy el dashboard, pero ya no se actualiza: queda congelado hasta que el
+  dashboard migre a BigQuery y después se apaga. El script se llama ahora `pipeline/hana_pipeline.py`.
 
 Estado real al 12-nov-2026:
 - Solo existe el esquema crudo `sap_hana_raw` (se renombrará a `raw_sap_fasa`) con 9 tablas de ventas de FASA: oinv, inv1, orin,
@@ -67,6 +70,11 @@ Estado real al 12-nov-2026:
 - 11-nov-2026: destino Postgres en Railway (el primer proyecto de GCP bloqueaba llaves de cuenta de servicio y no tenía facturación).
 - 17-nov-2026: el usuario pidió cambiar a BigQuery con un proyecto nuevo (`bigquery-515016`, cuenta de servicio `dlt-bigquery`,
   con facturación). El pipeline carga ahí por defecto; Postgres se conserva como destino opcional.
+- 18-nov-2026: **todo en BigQuery y se elimina Railway** (decisión del usuario). `raw_*`, `staging`, `intermediate`, `marts`, `ref`
+  y `dashapp` viven en BigQuery. El conector de Claude usa una **cuenta de servicio de solo lectura** (BigQuery Data Viewer solo
+  sobre `marts` + BigQuery Job User en el proyecto), no un usuario de Postgres. Desviación de la guía, sección 3 (Railway =
+  desarrollo, BigQuery = producción): queda sin entorno de desarrollo separado. **Pendiente de aprobación de Omar.**
+  Railway no se borra hasta que el dashboard lea de BigQuery.
 - Todo cambio entra como rama/propuesta en Git y otra persona lo revisa antes de unirlo a `main`.
 - 17-nov-2026: el repositorio de GitHub es **público** y el usuario decidió dejarlo así. Todo lo que se suba lo puede ver
   cualquiera: nunca subir credenciales, datos de clientes ni resultados de consultas.
@@ -82,33 +90,41 @@ Dos sesiones de Claude (servidor Windows y PC Windows) clonan este mismo repo co
 Preguntas para Omar (bloquean):
 - [ ] ¿`FRONTERRA_PROTO` o `FASA_PROD` es la base de producción de FASA? (PROTO llega al 7-nov-2026, FASA_PROD al 10-nov-2026.)
 - [ ] Usuario de solo lectura para el SAP de FGI.
-- [ ] BigQuery ya tiene proyecto con facturación (`bigquery-515016`). Falta decidir: ¿`marts` vive en BigQuery o en Railway, y
-      BigQuery ya es producción o sigue siendo prueba? (Ver "Decidir destino" abajo.)
+- [ ] Aprobar la decisión del 18-nov-2026: todo en BigQuery (`bigquery-515016`) y sin Railway, es decir, sin entorno de desarrollo
+      separado (la guía, sección 3, pedía Railway para desarrollo). ¿`bigquery-515016` es el proyecto de producción de la organización?
+      Si se quiere un entorno de pruebas, la opción barata es un dataset de desarrollo por persona en el mismo proyecto (target `dev` de dbt).
 - [ ] ¿"Paneles de Claude" es la app de `dashboard/` o los artefactos de claude.ai? La app hoy corre en localhost.
 - [ ] Máquina en sitio para la segunda instancia de dlt (base MS SQL de costeo de maquila).
 
-Decidir destino (afecta dbt y dashboard):
-- [ ] ¿dbt/`marts` en BigQuery o en Postgres? El dashboard y su MCP hoy solo hablan Postgres (`pg`). Opciones: (a) todo en BigQuery:
-      MCP con cliente BigQuery y cuenta de servicio de solo lectura (BigQuery Data Viewer solo sobre `marts` + Job User); `dashapp`
-      puede quedarse en Postgres. (b) BigQuery solo como copia cruda y dbt/`marts` en Postgres. Mientras tanto, para refrescar
-      Postgres: `python hana_pipeline.py --destination postgres`.
+Retirar Railway (en este orden):
+- [x] Decidir destino: todo en BigQuery (18-nov-2026).
+- [ ] dashboard: migrar a BigQuery (ver sección dashboard). Mientras tanto Postgres queda congelado; si hiciera falta refrescarlo:
+      `python hana_pipeline.py --destination postgres`.
+- [ ] Copiar los 5 dashboards de `dashapp` de Postgres a BigQuery (son prototipos; se pueden recrear en vez de copiar).
+- [ ] Quitar el destino `postgres` del pipeline (código, `requirements.txt`, plantillas de secretos) y la cadena de Railway de `secrets.toml`.
+- [ ] Apagar/borrar el servicio Postgres en Railway (lo hace el usuario, después de todo lo anterior).
 
 pipeline (dlt):
 - [ ] Renombrar el destino a `raw_sap_fasa` y agregar las tablas de la sección 5 de la guía + `OITB`.
 - [ ] Carga incremental por `update_date` con ventana de días y merge por llave (el script ya trae el modo `--incremental`).
 - [ ] Tarea programada diaria en el servidor, con registro de errores.
 - [ ] **Fotos diarias** de `OITW`, CxP y CxC: activarlas ya (la historia empieza el día que se activan).
-- [ ] Verificar que dbt Core funcione con el Python del servidor (3.14); si no, entorno con 3.12.
+- [x] Verificar que dbt Core funcione con el Python del servidor (3.14): dbt-core 1.12.7 + dbt-bigquery 1.12.4 instalan e importan
+      bien (17-nov-2026). Instalar el venv en una ruta corta: Windows no tiene rutas largas activadas y pip falla en rutas profundas.
 
 pipeline (dbt, Fase A de la guía):
 - [ ] Proyecto dbt en `pipeline/dbt/` con `dim_date` (Semana Fronterra) y `stg_sap__*`.
 - [ ] A5 `fct_sales`, `fct_credit_notes` con cuadre mensual contra contabilidad.
 - [ ] A2 `int_pallet_cost` (traducir el Anexo A; prueba: suma repartida = costo de la salida).
 - [ ] A3, A4, A6 `fct_sale_margin`, A7 `fct_pnl_monthly`.
-- [ ] Usuario de solo lectura sobre `marts` (script SQL sin contraseña en el repo).
+- [ ] Cuenta de servicio de solo lectura para Claude (p. ej. `claude-lector@bigquery-515016.iam.gserviceaccount.com`): rol
+      BigQuery Data Viewer solo sobre el dataset `marts` y BigQuery Job User en el proyecto. La crea el usuario en la consola de GCP;
+      su llave no va al repo.
 
-dashboard:
-- [ ] Dos conexiones: postgres solo para `dashapp`, usuario de solo lectura para las consultas de Claude.
+dashboard (migrar a BigQuery):
+- [ ] Cambiar `pg` por el cliente de BigQuery (`@google-cloud/bigquery`) en `db.js`, `server.js` y `mcp-server.js`.
+- [ ] Dos credenciales: una cuenta de servicio con escritura solo sobre el dataset `dashapp` (guardar dashboards) y la de solo
+      lectura sobre `marts` para las consultas de Claude. Las llaves fuera del repo (el repo es público).
+- [ ] Limitar costo de consultas: `maximumBytesBilled` en cada consulta de Claude y `LIMIT` obligatorio.
 - [ ] Rehacer los dashboards sobre `marts` (USD, Semana Fronterra, desde junio). Los actuales están marcados "[Prototipo]".
-- [ ] db.js reintenta sin SSL y no valida el certificado (`rejectUnauthorized: false`); exigir SSL con Railway.
-- [ ] Si producción es BigQuery: adaptar el MCP para consultar BigQuery y decidir dónde se guardan los dashboards.
+- [x] ~~db.js reintenta sin SSL con Railway~~: deja de aplicar al retirar Railway.

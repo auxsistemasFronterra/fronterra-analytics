@@ -13,6 +13,8 @@ Estado: redactadas, **sin respuesta registrada**. Anotar aquí la respuesta de c
    servicio de GCP y el proyecto no tenía facturación activa. ¿Quién resuelve el acceso y la facturación?
    *Avance 17-nov-2026:* ya hay un proyecto nuevo con facturación (`bigquery-515016`) y el pipeline carga ahí las 9 tablas. Falta
    confirmar si ese proyecto es el de producción de la organización y si `marts` (dbt) vive en BigQuery o en Railway.
+   *Decisión del usuario 18-nov-2026:* todo en BigQuery y se elimina Railway. Eso deja sin el entorno de desarrollo separado que
+   pide la sección 3 de la guía. **¿Lo aprueba?** Alternativa barata: datasets de desarrollo por persona en el mismo proyecto.
 4. **"Paneles de Claude".** ¿Se refiere a la app de dashboards que ya tenemos (página web propia conectada a Claude, que hoy solo
    corre en una computadora local) o a otra cosa? Si es la app, hay que definir dónde se publica y cómo entran los directores.
 5. **Costeo de maquila.** La guía pide una segunda instancia de dlt en una máquina de la oficina para leer la base MS SQL. ¿Qué

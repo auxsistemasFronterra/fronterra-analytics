@@ -12,8 +12,9 @@ desde SAP HANA a **BigQuery** (destino por defecto) o a **PostgreSQL en Railway*
 - **Destino por defecto:** `.dlt/config.toml` → `[fronterra] destination = "bigquery"`. Se fuerza con `--destination bigquery|postgres`.
   - **BigQuery:** proyecto `bigquery-515016`, dataset **`sap_hana_raw`**, región `northamerica-south1`,
     cuenta de servicio `dlt-bigquery@bigquery-515016.iam.gserviceaccount.com` (llave en `secrets.toml`). Pipeline dlt `hana_to_bigquery`.
-  - **Postgres:** Postgres 18 en Railway, base **`hanaDB`**, esquema **`sap_hana_raw`**. Pipeline dlt `hana_to_postgres`.
-    Es lo que lee hoy el dashboard; solo se actualiza si se corre con `--destination postgres`.
+  - **Postgres (se retira, decisión 18-nov-2026):** Railway, base `hanaDB`, esquema `sap_hana_raw`. Pipeline dlt `hana_to_postgres`.
+    Congelado: lo lee todavía el dashboard de prototipo. No usarlo para nada nuevo. Se quita del código cuando el dashboard
+    migre a BigQuery (ver "Retirar Railway" en el `CLAUDE.md` raíz).
 
 ## Tablas que carga (`sap_hana_raw`, igual en ambos destinos)
 Lista en `.dlt/config.toml` → `sources.hana.tables`. Modo actual: **reemplazo completo** (`write_disposition="replace"`)
@@ -47,7 +48,7 @@ copy .dlt\secrets.toml.example .dlt\secrets.toml   # y llenar credenciales reale
 ## Correr
 ```bash
 .venv\Scripts\python.exe hana_pipeline.py                          # carga completa (replace) al destino por defecto (BigQuery)
-.venv\Scripts\python.exe hana_pipeline.py --destination postgres   # carga completa a Postgres (Railway)
+.venv\Scripts\python.exe hana_pipeline.py --destination postgres   # solo si hiciera falta refrescar el Postgres congelado
 .venv\Scripts\python.exe hana_pipeline.py --test                   # solo prueba conexión a HANA y lista esquemas/tablas
 .venv\Scripts\python.exe hana_pipeline.py --incremental            # merge por cursor; requiere llenar el dict INCREMENTAL del script
 ```
@@ -73,9 +74,10 @@ copy .dlt\secrets.toml.example .dlt\secrets.toml   # y llenar credenciales reale
 
 ## dbt
 **Aún no existe.** Pendiente: proyecto dbt en `pipeline/dbt/` siguiendo `docs/guia_desarrollo.md` (secciones 4, 6 y 10):
-capas `staging` → `intermediate` → `marts` + `ref`, nombres en inglés, descripciones bilingües, una prueba por modelo y SQL
-portable entre PostgreSQL y BigQuery. Antes hay que decidir si `marts` vive en BigQuery o en Postgres (pendiente en el
-`CLAUDE.md` raíz). `profiles.yml` no va al repo.
+capas `staging` → `intermediate` → `marts` + `ref`, nombres en inglés, descripciones bilingües, una prueba por modelo.
+Adaptador **dbt-bigquery** (decisión 18-nov-2026: todo en BigQuery); seguir usando macros portables (`dbt.date_trunc`, etc.) como pide
+la guía. Probado: dbt-core 1.12.7 + dbt-bigquery 1.12.4 funcionan con Python 3.14.5; crear el venv en una ruta corta (Windows sin
+rutas largas). `profiles.yml` no va al repo.
 
 ## Brecha contra la guía (12-nov-2026)
 - El destino se llama `sap_hana_raw`; la guía pide `raw_sap_fasa` y `raw_sap_fgi`.
