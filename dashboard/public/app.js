@@ -5,7 +5,12 @@ const state = {
   charts: new Map(),  // canvas -> Chart
   versions: null,     // última versión conocida (para detectar cambios de Claude)
   focusAt: null,
+  user: null,         // { name, email, role: reader | editor | admin }
 };
+
+const ROLE_RANK = { reader: 0, editor: 1, admin: 2 };
+const ROLE_LABEL = { reader: 'Lector', editor: 'Editor', admin: 'Admin' };
+const can = (role) => ROLE_RANK[state.user?.role] >= ROLE_RANK[role];
 
 const $ = (s) => document.querySelector(s);
 const PALETTE = ['#4f6bed', '#20a37a', '#f2994a', '#d6457a', '#8e6cf0', '#2bb3c9', '#c9a227', '#6b7380'];
@@ -19,6 +24,10 @@ async function api(path, opts = {}) {
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && data.login) {
+    location.href = '/login?returnTo=' + encodeURIComponent(location.pathname);
+    throw new Error('Sesión vencida');
+  }
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
 }
@@ -156,10 +165,10 @@ function renderResult(el, w, result) {
   }));
 }
 
-async function runWidget(el, w) {
+async function runWidget(el, dashboardId, w) {
   if (!el.children.length) el.innerHTML = '<div class="widget-msg">Cargando…</div>';
   try {
-    renderResult(el, w, await api('/query', { method: 'POST', body: { sql: w.sql } }));
+    renderResult(el, w, await api(`/dashboards/${dashboardId}/charts/${encodeURIComponent(w.id)}/data`));
   } catch (err) {
     destroyChartsIn(el);
     el.innerHTML = `<div class="widget-msg err">${esc(err.message)}</div>`;
@@ -195,7 +204,7 @@ function renderDashboard(force = false) {
         <div class="widget-head"><h3></h3>
           <div class="widget-tools">
             <button data-act="sql" title="Ver SQL">SQL</button>
-            <button data-act="del" title="Eliminar">✕</button>
+            <button data-act="del" title="Eliminar" class="need-editor">✕</button>
           </div>
         </div>
         <div class="widget-body"></div>`;
@@ -211,7 +220,7 @@ function renderDashboard(force = false) {
     if (grid.children[i] !== card) grid.insertBefore(card, grid.children[i] || null);
     if (changed || force) {
       card.dataset.key = widgetKey(w);
-      runWidget(card.querySelector('.widget-body'), w);
+      runWidget(card.querySelector('.widget-body'), d.id, w);
       if (!firstRender && !force) {
         card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash');
       }
@@ -231,6 +240,7 @@ async function widgetAction(act, id) {
     $('#sql-dialog').showModal();
   }
   if (act === 'del') {
+    if (!can('editor')) return;
     if (!confirm(`¿Eliminar "${w.title}"?`)) return;
     state.current = await api(`/dashboards/${state.current.id}`, {
       method: 'PUT', body: { widgets: state.current.widgets.filter((x) => x.id !== id) },
@@ -256,7 +266,7 @@ async function loadDashboards(selectId) {
 async function openDashboard(id) {
   state.current = await api(`/dashboards/${id}`);
   try { localStorage.setItem('dash:last', id); } catch {}
-  api('/viewing', { method: 'POST', body: { id } }).catch(() => {}); // Claude sabe qué dashboard estás viendo
+  if (can('editor')) api('/viewing', { method: 'POST', body: { id } }).catch(() => {}); // Claude sabe qué dashboard estás viendo
   $('#sidebar').classList.remove('open');
   destroyChartsIn($('#grid'));
   $('#grid').innerHTML = '';
@@ -317,7 +327,7 @@ async function showConnected(info) {
   $('#app-view').classList.remove('hidden');
   $('#conn-info').innerHTML = `<span class="dot"></span>${esc(info.database)} @ ${esc(info.host)}`;
   await loadDashboards();
-  if (!state.dashboards.length) {
+  if (!state.dashboards.length && can('editor')) {
     const d = await api('/dashboards', { method: 'POST', body: { name: 'Mi dashboard' } });
     await loadDashboards(d.id);
   }
@@ -331,12 +341,25 @@ function showConnect(fromEnv) {
   clearInterval(pollTimer);
   $('#app-view').classList.add('hidden');
   $('#connect-view').classList.remove('hidden');
+  $('#connect-form').classList.toggle('hidden', !can('admin'));
   if (fromEnv) $('#connect-error').textContent = 'DATABASE_URL está configurada pero no se pudo conectar. Revisa los logs del servidor.';
+  else if (!can('admin')) $('#connect-error').textContent = 'La página no está conectada a la base de datos. Avisa al administrador.';
+}
+
+function showUser() {
+  const u = state.user;
+  document.body.classList.remove('role-reader', 'role-editor', 'role-admin');
+  document.body.classList.add(`role-${u.role}`);
+  $('#user-info').innerHTML = `<div class="user-name" title="${esc(u.email)}">${esc(u.name)}</div>
+    <div class="user-role">${esc(ROLE_LABEL[u.role] || u.role)}${u.authDisabled ? ' · sin login' : ''}</div>`;
+  $('#logout').classList.toggle('hidden', !!u.authDisabled);
 }
 
 async function init() {
+  state.user = await api('/me');
+  showUser();
   const st = await api('/status');
-  $('#disconnect').classList.toggle('hidden', st.fromEnv);
+  $('#disconnect').classList.toggle('hidden', st.fromEnv || !can('admin'));
   if (st.connected) await showConnected(st.info);
   else showConnect(st.fromEnv);
 }
@@ -373,6 +396,7 @@ $('#dashboard-list').addEventListener('click', (e) => {
 $('#toggle-sidebar').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
 $('#refresh').addEventListener('click', () => renderDashboard(true));
 $('#dash-title').addEventListener('click', async () => {
+  if (!can('editor')) return;
   const name = prompt('Nuevo nombre:', state.current.name);
   if (!name || name === state.current.name) return;
   state.current = await api(`/dashboards/${state.current.id}`, { method: 'PUT', body: { name } });

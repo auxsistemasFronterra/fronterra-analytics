@@ -12,6 +12,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@azure/msal-node": "^3.8.10",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "express": "^4.21.2",
     "pg": "^8.13.1",

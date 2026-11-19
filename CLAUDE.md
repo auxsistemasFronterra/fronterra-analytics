@@ -121,6 +121,22 @@ pipeline (dbt, Fase A de la guía):
       BigQuery Data Viewer solo sobre el dataset `marts` y BigQuery Job User en el proyecto. La crea el usuario en la consola de GCP;
       su llave no va al repo.
 
+dashboard (estado de pruebas, 18-nov-2026):
+- 19-nov-2026: el dashboard queda en pausa; lo siguiente es llevar todo a BigQuery. **No borrar la conexión a Postgres**
+  (Railway, `DATABASE_URL` en `dashboard/.env` y `[destination.postgres]` en `secrets.toml`): el usuario la quiere conservar.
+- Por ahora las pruebas siguen sobre Postgres (Railway, `hanaDB`) en el puerto **8501**, publicado en
+  https://fronterra-portal.vdv.one por un túnel de Cloudflare del proveedor. Arranque manual: `cd dashboard` y `npm start`.
+- [x] Login con el tenant de Microsoft 365 (Entra ID) y permisos por grupos Lectores/Editores/Admin (rama `login-entra`,
+      ver `dashboard/CLAUDE.md`). Falta probar el login real con los valores de Entra en `dashboard/.env`.
+- [ ] Dejar el dashboard como servicio de Windows (arranque automático) con un **usuario propio sin privilegios que no pueda
+      leer `pipeline/.dlt/secrets.toml`** (hoy corre con el usuario que tiene las llaves de HANA, BigQuery y Railway).
+- [ ] Usuario de Postgres de solo lectura para las gráficas (hoy es el superusuario: puede leer archivos del servidor aun en
+      transacción READ ONLY).
+- [ ] Confirmar quién es `vdvgretamal` (tiene control total sobre `secrets.toml`) y si debe tener ese acceso.
+- [ ] Verificar que los "valores predeterminados de seguridad" (MFA) estén activos en el tenant.
+- [ ] Menores: actualizar `@azure/msal-node` a v7 (aviso moderado de `uuid`), CSP, límite de intentos, registro de logins.
+- [x] El túnel apunta a `localhost:8501` (comprobado 18-nov-2026: la dirección pública llega a la app y redirige al login).
+
 dashboard (migrar a BigQuery):
 - [ ] Cambiar `pg` por el cliente de BigQuery (`@google-cloud/bigquery`) en `db.js`, `server.js` y `mcp-server.js`.
 - [ ] Dos credenciales: una cuenta de servicio con escritura solo sobre el dataset `dashapp` (guardar dashboards) y la de solo

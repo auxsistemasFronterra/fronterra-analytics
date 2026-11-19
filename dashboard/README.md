@@ -17,10 +17,13 @@ Tú ──chat──▶ Claude ──MCP──▶ mcp-server.js ──▶ Postgr
 
 ```bash
 npm install
+copy .env.example .env    # y llenar los valores de Entra ID (login con Microsoft)
 npm start
 ```
 
-1. Abre http://localhost:3000 y pega la cadena de conexión pública de tu Postgres
+1. Abre http://localhost:8501 (o https://fronterra-portal.vdv.one) y entra con tu cuenta de Microsoft de la empresa.
+   Tienes que estar en uno de los grupos `Dashboards-Lectores`, `Dashboards-Editores` o `Dashboards-Admin`.
+   Si la página no está conectada, un Admin pega la cadena de conexión de Postgres
    (Railway → servicio Postgres → Variables → `DATABASE_PUBLIC_URL`). Se guarda en `config.json`.
 2. Abre una sesión de Claude en la raíz del repo (`fronterra-analytics/`). El `.mcp.json` de ahí registra el
    servidor `dashboards`; Claude te pedirá aprobarlo la primera vez.
@@ -33,7 +36,8 @@ Si no dices qué dashboard, Claude usa el que tienes abierto en la página.
 
 | Archivo | Qué es |
 |---|---|
-| `server.js` | La página web (puerto 3000) |
+| `server.js` | La página web (puerto 8501, solo `127.0.0.1`) |
+| `auth.js` | Login con Microsoft Entra ID y roles por grupo |
 | `mcp-server.js` | Servidor MCP que usa Claude (lo arranca Claude solo) |
 | `db.js` | Conexión y consultas compartidas |
 | `../CLAUDE.md` | Reglas de tus datos (secciones Arquitectura, Reglas y Decisiones) que Claude lee al conectarse |
@@ -55,5 +59,6 @@ Lo único que se escribe es el esquema `dashapp` (dashboards y estado de la pág
 ## Notas
 
 - Si cambias las reglas en `../CLAUDE.md`, reinicia el servidor MCP (o la sesión de Claude) para que lo lea.
-- La página también se puede publicar en Railway (`DATABASE_URL` y `APP_PASSWORD` como variables) para
-  que otros vean los dashboards; el MCP sigue funcionando desde tu computadora porque ambos usan la misma base.
+- La página se publica en https://fronterra-portal.vdv.one con un túnel de Cloudflare que entra por `localhost:8501`.
+  El MCP sigue funcionando desde tu computadora porque ambos usan la misma base.
+- La página nunca manda SQL: cada gráfica corre el SQL que Claude guardó en el dashboard.

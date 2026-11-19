@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dashboards con Claude</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=2">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
@@ -31,12 +31,16 @@
       <div class="conn-info" id="conn-info"></div>
       <div class="side-head">
         <span>Mis dashboards</span>
-        <button id="new-dashboard" class="icon" title="Nuevo dashboard">＋</button>
+        <button id="new-dashboard" class="icon need-editor" title="Nuevo dashboard">＋</button>
       </div>
       <ul id="dashboard-list" class="dash-list"></ul>
       <div class="side-foot">
         <div class="live" title="La página revisa cambios cada 2 segundos"><span class="dot"></span>En vivo con Claude</div>
-        <button id="disconnect" class="ghost small">Desconectar</button>
+        <button id="disconnect" class="ghost small need-admin">Desconectar</button>
+        <div class="user-box">
+          <div id="user-info" class="user-info"></div>
+          <a id="logout" class="ghost small" href="/auth/logout">Salir</a>
+        </div>
       </div>
     </aside>
 
@@ -46,7 +50,7 @@
         <h2 id="dash-title" class="dash-title" title="Clic para renombrar"></h2>
         <div class="actions">
           <button id="refresh" class="ghost" title="Volver a cargar los datos">⟳ Actualizar</button>
-          <button id="delete-dashboard" class="ghost danger" title="Eliminar dashboard">🗑</button>
+          <button id="delete-dashboard" class="ghost danger need-admin" title="Eliminar dashboard">🗑</button>
         </div>
       </header>
       <div id="empty-state" class="empty hidden">
@@ -62,7 +66,7 @@
       </div>
       <div id="no-dash" class="empty hidden">
         <p>No tienes dashboards todavía.</p>
-        <button class="primary" id="create-first">＋ Crear dashboard</button>
+        <button class="primary need-editor" id="create-first">＋ Crear dashboard</button>
       </div>
       <div id="grid" class="grid"></div>
     </main>
@@ -81,6 +85,6 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>
