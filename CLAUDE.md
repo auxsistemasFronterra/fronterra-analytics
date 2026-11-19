@@ -29,20 +29,22 @@ Las secciones Arquitectura, Reglas y Decisiones de este archivo también se le p
 - Toda la lógica de negocio va en dbt. Nunca en la herramienta de visualización (ni en el SQL de una gráfica).
 - Toda llave incluye la entidad (FASA o FGI).
 - Cada modelo lleva descripción bilingüe (inglés y español) en su .yml y al menos una prueba.
-- SQL portable entre PostgreSQL y BigQuery: usa macros de dbt (dbt.date_trunc, dbt.safe_cast...).
+- El almacén es BigQuery: se puede usar SQL de BigQuery; preferir macros de dbt cuando existan (guía v2, sección 0).
 - Nunca escribas credenciales en el código.
 - Si un dato contradice una regla de la guía, detente y avisa antes de cambiar la regla.
-- Semanas: Semana Fronterra (domingo a sábado, numeración gregoriana) desde `dim_date`. No usar `date_trunc('week')`.
+- Semanas: Semana Fronterra (domingo a sábado, numeración gregoriana) desde `dim_date`, nunca de funciones de fecha de la base de datos.
 - Tablero en USD con las columnas de moneda de sistema de SAP (`*_sy`, `sys_deb`, `sys_cred`). Todo empieza el 1 de junio de 2026.
 - Unir documentos por `doc_entry`, nunca por `doc_num`. Excluir cancelados (`canceled = 'N'`).
-- Todo vive en BigQuery (decisión 18-nov-2026, ver Decisiones). Railway se retira: no construir nada nuevo sobre Postgres y
-  nadie toma decisiones con los datos que quedan ahí.
+- Todo vive en BigQuery, con datasets de desarrollo (`dev`) y producción (`prod`) separados (targets de dbt). Nadie toma decisiones
+  con datos de `dev`. Railway se retira: no construir nada nuevo sobre Postgres.
+- Todo lo que ven los directores va en **Lightdash** (guía v2, secciones 1 y 16). Las métricas se declaran en el `meta` de los `.yml`.
 
 ## Arquitectura
 SAP B1 HANA (FASA y FGI) → dlt (pipeline/) → **BigQuery** (proyecto `bigquery-515016`, región `northamerica-south1`) → dbt Core
-(pipeline/) → `marts` → paneles de Claude (dashboard/: página + servidor MCP) y, después del 8 de enero, Lightdash.
-Los dashboards de la app también se guardarán en BigQuery (dataset `dashapp`). PostgreSQL en Railway se retira (ver Pendientes).
-Esto se desvía de la sección 3 de la guía (Railway = desarrollo); pendiente de aprobación de Omar.
+(pipeline/) → `marts` (dataset de producción) → **Lightdash**: Dashboard de Rentabilidad, Weekly y los cuatro estados financieros
+(meta 8 de enero), con su agente de IA; después el Hub operativo. Guía v2 (19-nov-2026), secciones 3 y 16. Polytomic se evalúa
+como alternativa a dlt (prueba de 7 días). PostgreSQL en Railway se retira (ver Pendientes).
+La app `dashboard/` (página + MCP) queda como herramienta de exploración: la guía v2 descarta tableros directivos fuera de Lightdash.
 
 Capas (guía, sección 4): `raw_sap_fasa`, `raw_sap_fgi` (crudo) → `staging` (`stg_sap__*`) → `intermediate` (`int_*`) → `marts`
 (`fct_*`, `dim_*`) + `ref` (tablas de Finanzas/Calidad).
@@ -75,6 +77,10 @@ Estado real al 12-nov-2026:
   sobre `marts` + BigQuery Job User en el proyecto), no un usuario de Postgres. Desviación de la guía, sección 3 (Railway =
   desarrollo, BigQuery = producción): queda sin entorno de desarrollo separado. **Pendiente de aprobación de Omar.**
   Railway no se borra hasta que el dashboard lea de BigQuery.
+- 19-nov-2026: **guía v2** (`docs/guia_desarrollo.md`). Confirma BigQuery como único almacén (ya no es desviación) con datasets
+  `dev` y `prod` separados; todo se muestra en Lightdash (se descartan los paneles de Claude para directores); agrega alcance del MVP
+  (1.1), los cuatro estados financieros (8.1 y Anexo B), tablas `ORCT`, `RCT2`, `CRD1`, `INV12`, `OOCR`, `OFPR`, `OADM`, la definición
+  de AR – % Collected y la corrección de países en el maestro de clientes (14.1).
 - Todo cambio entra como rama/propuesta en Git y otra persona lo revisa antes de unirlo a `main`.
 - 17-nov-2026: el repositorio de GitHub es **público** y el usuario decidió dejarlo así. Todo lo que se suba lo puede ver
   cualquiera: nunca subir credenciales, datos de clientes ni resultados de consultas.
@@ -90,10 +96,11 @@ Dos sesiones de Claude (servidor Windows y PC Windows) clonan este mismo repo co
 Preguntas para Omar (bloquean):
 - [ ] ¿`FRONTERRA_PROTO` o `FASA_PROD` es la base de producción de FASA? (PROTO llega al 7-nov-2026, FASA_PROD al 10-nov-2026.)
 - [ ] Usuario de solo lectura para el SAP de FGI.
-- [ ] Aprobar la decisión del 18-nov-2026: todo en BigQuery (`bigquery-515016`) y sin Railway, es decir, sin entorno de desarrollo
-      separado (la guía, sección 3, pedía Railway para desarrollo). ¿`bigquery-515016` es el proyecto de producción de la organización?
-      Si se quiere un entorno de pruebas, la opción barata es un dataset de desarrollo por persona en el mismo proyecto (target `dev` de dbt).
-- [ ] ¿"Paneles de Claude" es la app de `dashboard/` o los artefactos de claude.ai? La app hoy corre en localhost.
+- [x] ~~Aprobar todo en BigQuery~~: la guía v2 lo confirma, con datasets `dev` y `prod` separados.
+- [ ] ¿`bigquery-515016` es el proyecto definitivo? Quién es el dueño del pago y el presupuesto con alertas (guía v2, sección 3).
+- [x] ~~"Paneles de Claude"~~: la guía v2 lo resuelve, todo va en Lightdash.
+- [ ] ¿Qué se hace con la app `dashboard/` y con la rama `login-entra` (login con Microsoft Entra ID, 19-nov-2026)? La guía v2
+      descarta tableros directivos fuera de Lightdash; los permisos por usuario se manejan en Lightdash.
 - [ ] Máquina en sitio para la segunda instancia de dlt (base MS SQL de costeo de maquila).
 
 Retirar Railway (en este orden):
@@ -104,8 +111,14 @@ Retirar Railway (en este orden):
 - [ ] Quitar el destino `postgres` del pipeline (código, `requirements.txt`, plantillas de secretos) y la cadena de Railway de `secrets.toml`.
 - [ ] Apagar/borrar el servicio Postgres en Railway (lo hace el usuario, después de todo lo anterior).
 
+Lightdash (guía v2, sección 16):
+- [ ] Acordar la extensión de la prueba de 21 días **antes** de arrancarla, o arrancarla a más tardar en SEM 49 con los primeros
+      modelos listos. Confirmar SSO de Microsoft y uso del agente de IA con la llave propia de la API de Claude.
+- [ ] Cuenta de servicio de solo lectura para Lightdash, limitada al dataset de producción.
+
 pipeline (dlt):
-- [ ] Renombrar el destino a `raw_sap_fasa` y agregar las tablas de la sección 5 de la guía + `OITB`.
+- [ ] Renombrar el destino a `raw_sap_fasa` y agregar las tablas de la sección 5 de la guía + `OITB` + las nuevas de la guía v2:
+      `ORCT`, `RCT2`, `CRD1`, `INV12` (sección 5) y `OOCR`, `OFPR`, `OADM` (Anexo B).
 - [ ] Carga incremental por `update_date` con ventana de días y merge por llave (el script ya trae el modo `--incremental`).
 - [ ] Tarea programada diaria en el servidor, con registro de errores.
 - [ ] **Fotos diarias** de `OITW`, CxP y CxC: activarlas ya (la historia empieza el día que se activan).
@@ -117,6 +130,14 @@ pipeline (dbt, Fase A de la guía):
 - [ ] A5 `fct_sales`, `fct_credit_notes` con cuadre mensual contra contabilidad.
 - [ ] A2 `int_pallet_cost` (traducir el Anexo A; prueba: suma repartida = costo de la salida).
 - [ ] A3, A4, A6 `fct_sale_margin`, A7 `fct_pnl_monthly`.
+- [ ] Targets de dbt `dev` y `prod` en datasets separados.
+- [ ] Estados financieros (8.1 y Anexo B): `fct_trial_balance`, `fct_income_statement_monthly`, `fct_balance_sheet_monthly`,
+      `fct_equity_changes`, `fct_cash_flow`. Bloqueos de Finanzas: saldos al 31-may-2026, `ref_cashflow_mapping`,
+      `ref_equity_mapping`, método de conversión de moneda.
+- [ ] Weekly: AR – % Collected con `OINV` por vencimiento y `ORCT`/`RCT2` (definición confirmada en la guía v2).
+
+SAP (lo hace el usuario o Finanzas, guía v2 sección 14.1):
+- [ ] Corregir el país (`CRD1.Country`, enviar a y facturar a) de los clientes con `XX` o vacío en FASA y FGI.
 - [ ] Cuenta de servicio de solo lectura para Claude (p. ej. `claude-lector@bigquery-515016.iam.gserviceaccount.com`): rol
       BigQuery Data Viewer solo sobre el dataset `marts` y BigQuery Job User en el proyecto. La crea el usuario en la consola de GCP;
       su llave no va al repo.

@@ -15,8 +15,11 @@ Estado: redactadas, **sin respuesta registrada**. Anotar aquí la respuesta de c
    confirmar si ese proyecto es el de producción de la organización y si `marts` (dbt) vive en BigQuery o en Railway.
    *Decisión del usuario 18-nov-2026:* todo en BigQuery y se elimina Railway. Eso deja sin el entorno de desarrollo separado que
    pide la sección 3 de la guía. **¿Lo aprueba?** Alternativa barata: datasets de desarrollo por persona en el mismo proyecto.
+   *Respuesta (guía v2, 19-nov-2026):* BigQuery es el único almacén, con datasets `dev` y `prod` separados. Queda pendiente
+   quién es el dueño del pago y el presupuesto con alertas.
 4. **"Paneles de Claude".** ¿Se refiere a la app de dashboards que ya tenemos (página web propia conectada a Claude, que hoy solo
    corre en una computadora local) o a otra cosa? Si es la app, hay que definir dónde se publica y cómo entran los directores.
+   *Respuesta (guía v2, 19-nov-2026):* todo se muestra en Lightdash; se descartan los tableros directivos fuera de Lightdash.
 5. **Costeo de maquila.** La guía pide una segunda instancia de dlt en una máquina de la oficina para leer la base MS SQL. ¿Qué
    máquina se usa y quién nos da acceso de lectura a esa base?
 

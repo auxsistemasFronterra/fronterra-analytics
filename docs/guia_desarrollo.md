@@ -20,7 +20,7 @@ Lee docs/guia_desarrollo.md antes de escribir o modificar cualquier modelo.
 - Toda la lógica de negocio va en dbt. Nunca en la herramienta de visualización.
 - Toda llave incluye la entidad (FASA o FGI).
 - Cada modelo lleva descripción bilingüe (inglés y español) en su .yml y al menos una prueba.
-- SQL portable entre PostgreSQL y BigQuery: usa macros de dbt (dbt.date_trunc, dbt.safe_cast...).
+- El almacén es BigQuery: se puede usar SQL de BigQuery; preferir macros de dbt cuando existan.
 - Nunca escribas credenciales en el código.
 - Si un dato contradice una regla de la guía, detente y avisa antes de cambiar la regla.
 ```
@@ -33,9 +33,9 @@ Lee docs/guia_desarrollo.md antes de escribir o modificar cualquier modelo.
 
 Un **tablero para los directores** que responda: **¿cuánto ganamos en cada venta, y por qué?**
 
-Para responderlo hay que juntar, para cada venta, cuánto se cobró y cuánto costó todo lo que hizo falta para entregarla: la fruta, cosecharla, transportarla, empacarla y llevarla al cliente. Ese cálculo vive en dbt. El tablero (paneles de Claude) y, más adelante, Lightdash solo lo muestran.
+Para responderlo hay que juntar, para cada venta, cuánto se cobró y cuánto costó todo lo que hizo falta para entregarla: la fruta, cosecharla, transportarla, empacarla y llevarla al cliente. Ese cálculo vive en dbt. **Todo se muestra en Lightdash**: el Dashboard de Rentabilidad, el Weekly y los cuatro estados financieros. No hay tableros directivos fuera de Lightdash.
 
-Además, el tablero incluye el **Weekly Report** (15 indicadores que los directores revisan cada semana) y una **IA** que responde preguntas en inglés y en español.
+Además, el tablero incluye el **Weekly Report** (15 indicadores que los directores revisan cada semana), los **cuatro estados financieros** y el **agente de IA de Lightdash**, que responde preguntas en inglés y en español sobre las métricas definidas en dbt.
 
 **Fecha de entrega:** 8 de enero de 2027.
 
@@ -43,10 +43,28 @@ Además, el tablero incluye el **Weekly Report** (15 indicadores que los directo
 
 1. El total de ventas y costos por mes cuadra con la contabilidad de SAP.
 2. Cada venta desde junio de 2026 muestra su margen, y el tablero muestra qué porcentaje de ventas tiene su costo completo.
-3. La IA contesta bien al menos 18 de 20 preguntas que escribirán los directores.
+3. El agente de IA de Lightdash contesta bien al menos 18 de 20 preguntas que escribirán los directores, en inglés y en español.
 4. Los directores lo usan en su junta semanal al menos dos veces antes del 8 de enero.
 
 ---
+
+## 1.1 Alcance del MVP para el 8 de enero
+
+Regla: **supuesto por defecto + marca visible + Fase 2.** Ninguna pregunta abierta detiene la construcción.
+
+**Dentro del MVP:**
+- Los cuatro estados financieros de FASA y FGI (con los insumos que entregue Finanzas).
+- Margen por venta de FASA; consolidado con reparto del costo de cada tráiler entre sus ventas por cajas, marcado como aproximado, hasta que la automatización FGI → FASA conserve el número de pallet.
+- Weekly: los 13 KPIs listos **más AR – % Collected** (no negociable): de lo que vencía en la semana, qué porcentaje se cobró. OTIF fuera.
+- Trazabilidad hasta la huerta: prueba de 20 ventas y 5 huertas. Sin pruebas de orgánico ni de elegibilidad por mercado.
+- Maquila: **solo desde que existe la app de costeo (octubre 2026)**, por costeo COS. Lo que no se pueda calcular no aparece, y los pallets de maquila sin costo de maquila se marcan como "margen incompleto" para que no parezcan más rentables de lo que son.
+- Empaque de San Lorenzo anterior a la corrección de n8n: se muestra como hueco de captura.
+- Costos de FGI (fletes y bodegas en EE.UU.): fuera del margen por venta; se ven en el estado de resultados. Se exploran campos de FGI con consultas conforme avance el proyecto.
+- **Mercado de destino por país del cliente:** cada venta toma el país de envío **del propio documento** (`INV12.country_s`, la dirección de entrega de la factura) y, si viene vacío, el de la dirección de entrega predeterminada del cliente (`CRD1`). Datos maestros por corregir: en FASA, 8 clientes con país `XX` y 5 vacíos; en FGI, 2 vacíos. Para las ventas de FASA a FGI, el país es el del cliente final de FGI (vía la cadena del pallet o, mientras no exista, el reparto por tráiler). Rastreando hacia atrás (venta → pallet → lote), cada lote queda clasificado por el mercado al que realmente se vendió su fruta, y el costo de la fruta se compara por mercado.
+
+**Cambios de configuración de SAP en curso:** Finanzas prepara mejoras a SAP (cuentas nuevas, costeos, listas de materiales). Regla para el MVP: se construye con la configuración actual y se ajusta cuando lleguen los cambios. Las pruebas que alertan cuentas sin mapear, formatos nuevos y descuadres contra contabilidad son las que detectan el impacto de cada cambio. Pedir a Finanzas que cada cambio tenga fecha de entrada en vigor al inicio de un mes y se avise antes de aplicarse.
+
+**Fuera del MVP (Fase 2):** huertas orgánicas y huertas autorizadas por mercado (Calidad), validación de la prueba de trazabilidad con Calidad, OTIF, licencia de HANA para dlt.
 
 ## 2. Glosario: el negocio en palabras de desarrollador
 
@@ -79,23 +97,25 @@ Además, el tablero incluye el **Weekly Report** (15 indicadores que los directo
 ## 3. Arquitectura y entornos
 
 ```
-SAP B1 HANA (FASA y FGI)
-   │  dlt (Python) en el escritorio remoto del proveedor de SAP, entorno hub_env
+SAP B1 HANA (FASA y FGI)  +  app de costeo de maquila (MS SQL, en sitio)
+   │  dlt (Python): extracción actual, en el escritorio remoto del proveedor de SAP (entorno hub_env)
+   │  Polytomic: en evaluación (prueba sin costo de 7 días con el conector SAP B1 HANA que desarrollarán)
    ▼
-PostgreSQL en Railway  ← DESARROLLO (aprender, probar, validar)
-BigQuery               ← PRODUCCIÓN (a más tardar a mediados de diciembre)
+BigQuery  ← único almacén (Railway queda retirado)
+           datasets de desarrollo (dev) y de producción (prod) separados
    │
    ▼
 dbt Core (SQL + YAML) en Git  ← aquí vive toda la lógica
    │
-   ├──► Paneles de Claude: tablero de directores
-   └──► Lightdash: Hub operativo (después del 8 de enero)
+   └──► Lightdash: Dashboard de Rentabilidad, Weekly, estados financieros (meta 8 de enero)
+        y después el Hub operativo y de planeación
 ```
 
 Reglas de entorno:
 
-- **Railway es para desarrollo.** Nadie toma decisiones con esos datos.
-- El conector de Claude se conecta con un **usuario de solo lectura** y solo a las tablas finales (`marts`).
+- **Un solo almacén: BigQuery.** Desarrollo y producción viven en datasets separados (dbt targets `dev` y `prod`); nadie toma decisiones con datos de `dev`.
+- **Costos de BigQuery:** presupuesto con alertas activas y un dueño claro del pago (si no se paga, se apaga).
+- Lightdash se conecta a BigQuery con una **cuenta de servicio de solo lectura**, limitada al dataset de producción. Los permisos por usuario (entidad, área) se manejan en Lightdash con grupos y filtros por fila.
 - Toda conexión cifrada; credenciales fuera del código.
 
 ---
@@ -112,7 +132,7 @@ Reglas de entorno:
 | Final | `marts` | `fct_` (hechos), `dim_` (catálogos) | `fct_sale_margin`, `dim_customer` |
 | Referencia | `ref` | Tablas que mantienen Finanzas, Calidad o el equipo | `ref_account_mapping` |
 
-**Patrón:** hechos y dimensiones separados por dentro (staging e intermediate); **tablas anchas** hacia afuera (marts), con todo ya unido, para que los directores y la IA pregunten sin pensar en uniones.
+**Patrón:** hechos y dimensiones separados por dentro (staging e intermediate); **tablas anchas** hacia afuera (marts), con todo ya unido, para que los directores y el agente de IA de Lightdash pregunten sin pensar en uniones. Las métricas se declaran en el `meta` de los `.yml` para que Lightdash las lea.
 
 ### 4.2 Columnas
 
@@ -134,7 +154,7 @@ Las descripciones copian los nombres que usan los directores, con sinónimos. De
 
 ### 4.4 Nombres de columnas de dlt
 
-dlt convierte los nombres de SAP a minúsculas con guion bajo: `DocNum` → `doc_num`, `U_FolioFronterra` → `u_folio_fronterra`. Verifica los nombres reales en PostgreSQL antes de escribir modelos.
+dlt convierte los nombres de SAP a minúsculas con guion bajo: `DocNum` → `doc_num`, `U_FolioFronterra` → `u_folio_fronterra`. Verifica los nombres reales en BigQuery antes de escribir modelos.
 
 ---
 
@@ -162,6 +182,9 @@ Para **FASA y FGI** (cada entidad con su propio usuario de solo lectura):
 | `NNM1` | Series de numeración | Recarga completa diaria |
 | `OPRJ` | Proyectos | Recarga completa diaria |
 | `ORTT` | Tipos de cambio (actualizados por n8n desde Banxico) | Recarga completa diaria |
+| `ORCT`, `RCT2` | Cobros de clientes y facturas a las que se aplican | Incremental con ventana |
+| `CRD1` | Direcciones de socios de negocio (país de envío) | Recarga completa diaria |
+| `INV12` | Direcciones de cada factura de venta (país de envío del documento) | Incremental con ventana |
 | Base de datos de la herramienta de costo de maquila (MS SQL, fuera de SAP) | Costo estimado de maquila por pallet embarcado (incluye reempaques), con su orden de venta | Servidor local en sitio: **no es alcanzable desde el escritorio remoto del proveedor de SAP**. Se carga con una segunda instancia de dlt en una máquina de la oficina, que escribe directo a la base de desarrollo o a BigQuery |
 
 **Notas de carga:**
@@ -195,7 +218,7 @@ Implementar exactamente así. Cada regla con su prueba.
 | 15 | Kilos netos | Kilos Run = kilos de fruta consumidos en fabricaciones − kilos devueltos (regla 14). La misma regla funciona antes y después del cambio de flujo. Con "Reingreso MP - Salida #N", la salida referida se marca como revertida y sus pallets como `is_reversed` (se excluyen de inventario y de totales de costo) |
 | 16 | Kilos reales, no peso del producto | El peso en la descripción del producto terminado no es confiable (algunos artículos "28 KG" se registran como 1 kg y pueden traer de 2 a 28 kg). Los kilos de un pallet son la fruta consumida en sus fabricaciones. Kilos Sold sigue la cadena pallet → venta |
 | 17 | Fechas de contabilización atrasadas | Hay documentos creados después con fecha de contabilización anterior (por ejemplo, entradas con número alto y fecha de días previos). Las cargas incrementales usan la fecha de actualización, nunca la fecha del documento |
-| 18 | Granularidad semanal | Todos los tableros funcionan por **semana** y por mes. `dim_date` lleva semana (inicio y fin, número de semana y año de la semana) con la convención **Semana Fronterra: de domingo a sábado** con numeración **gregoriana**: la SEM 1 es la que contiene el 1 de enero, aunque sea parcial (en 2026, del jueves 1 al sábado 3 de enero; la SEM 2 empieza el domingo 4), equivalente a `WEEKNUM(fecha, 1)` de Excel. Se muestra como "SEM 34". Por confirmar con un ejemplo contra el Weekly actual. No usar `date_trunc('week')`: en PostgreSQL la semana empieza en lunes y en BigQuery en domingo. Las semanas salen siempre de `dim_date`. La semana se calcula con costos operativos (fabricación, servicios, maquila estimada); el cuadre exacto contra contabilidad es mensual, porque contabilidad cierra por mes |
+| 18 | Granularidad semanal | Todos los tableros funcionan por **semana** y por mes. `dim_date` lleva semana (inicio y fin, número de semana y año de la semana) con la convención **Semana Fronterra: de domingo a sábado** con numeración **gregoriana**: la SEM 1 es la que contiene el 1 de enero, aunque sea parcial (en 2026, del jueves 1 al sábado 3 de enero; la SEM 2 empieza el domingo 4), equivalente a `WEEKNUM(fecha, 1)` de Excel. Se muestra como "SEM 34". Por confirmar con un ejemplo contra el Weekly actual. Las semanas salen siempre de `dim_date`, nunca de funciones de fecha de la base de datos. La semana se calcula con costos operativos (fabricación, servicios, maquila estimada); el cuadre exacto contra contabilidad es mensual, porque contabilidad cierra por mes |
 | 19 | Costo de maquila estimado | El costo de maquila se calcula en una herramienta externa a SAP (MS SQL), **por pallet embarcado, incluyendo reempaques**, porque las facturas de maquila (`CV-SRV-005`, `015`, `016`) llegan a destiempo. Se une a SAP por número de pallet y orden de venta. dlt replica esa base de datos. Regla: mientras no llega la factura, se usa el estimado por pallet de la herramienta, con `is_estimated = true`. Cada factura de maquila trae en sus **comentarios del encabezado** (`OPCH.comments`, copiados del pedido) un texto como `Costeo de Maquilas - COS-001033 (OC1070, OC1089) - 05/11/2026`. La llave es el **folio de costeo `COS-######`**, que es el identificador del cálculo en la app de costeo (MS SQL), **con el mismo formato en ambos sistemas** (unión directa); la app sabe qué pallets y órdenes de venta cubre cada costeo. Un costeo puede cubrir más de una orden (por ejemplo, `OC1070, OC1089`). Extraer con `COS-([0-9]+)` y, para las órdenes, todas las coincidencias de `OC\s*([0-9]+)` (o `PO` tras la migración). Conciliación por costeo: costo real de cada pallet = estimado del pallet × (total facturado del costeo ÷ suma de estimados de los pallets del costeo). Se registra la diferencia entre estimado y factura (precisión del estimado por sitio y por mes). **Cobertura medida:** octubre y noviembre 2026, 100% de las facturas de maquila traen folio COS y OC. Junio (5 facturas, 1.98 M MXN) y septiembre (1 factura) no lo traen y no hay facturas en julio ni agosto: la app de costeo empezó a usarse en octubre 2026. **Para junio–septiembre** la maquila se pagaba **por caja empacada**: costo de maquila del pallet = cajas del pallet × tarifa por caja de su maquila, tomada de `ref_copack_rates` (maquila, vigencia desde/hasta, tarifa, moneda; por presentación si aplica; incluye si el reempaque se cobraba). Prueba: la suma mensual del cálculo por tarifa debe cuadrar con el costo contable de maquila del mes; la diferencia se reporta |
 
 ---
@@ -251,6 +274,23 @@ Ejemplo: FASA vende a FGI en 80; FGI vende al cliente en 100.
 **Catálogos de cuentas:** FASA y FGI tienen catálogos distintos. `ref_account_mapping` (la mantiene Finanzas) lleva cada cuenta a una línea común del estado de resultados. **Bloqueo:** sin esa tabla no se puede armar el consolidado por mes.
 
 ---
+
+## 8.1 Los cuatro estados financieros (roca 1)
+
+Objetivo: estado de situación financiera (balance general), estado de resultados, estado de flujos de efectivo y estado de variaciones en el capital contable, por entidad y consolidados.
+
+**Modelo base: la balanza de comprobación** (`fct_trial_balance`): por cuenta, mes y entidad, saldo inicial, cargos, abonos y saldo final, desde `JDT1` + `OACT`. Los cuatro estados salen de ella:
+
+| Estado | Cuentas (`OACT.group_mask`) | Cómo se calcula |
+|---|---|---|
+| Estado de resultados | 4 a 8 | Movimiento del periodo. Excluir asientos de cierre de ejercicio (`trans_type = -3`). Es la vista del partner `XBXP_DASHBOARD_EDORESULTADOS`, con signos corregidos |
+| Balance general | 1 a 3 (activo, pasivo, capital) | **Saldo acumulado** a la fecha, no movimiento del periodo. Incluye asientos de cierre |
+| Flujo de efectivo | Todas | Método indirecto: resultado del periodo + partidas que no son efectivo + cambios en capital de trabajo, inversión y financiamiento. Requiere `ref_cashflow_mapping` (Finanzas): cada cuenta → actividad de operación, inversión o financiamiento |
+| Variaciones en el capital contable | 3 | Movimientos de las cuentas de capital por concepto (aportaciones, resultado del ejercicio, dividendos, reservas). Requiere `ref_equity_mapping` (Finanzas) |
+
+**Fecha de corte y saldos iniciales:** el balance general necesita saldos acumulados, que incluyen movimientos anteriores a junio de 2026. Regla: tomar como saldo inicial de cada cuenta el saldo al 31 de mayo de 2026 **validado por Finanzas**, y a partir de ahí acumular solo movimientos desde el 1 de junio. Prueba: la balanza de dbt cuadra con la balanza de SAP cada mes.
+
+**FGI y consolidado:** el catálogo de FGI se mapea con `ref_account_mapping` a la misma estructura. **Conversión de moneda (decide Finanzas):** FASA registra en pesos y FGI en dólares. Los estados consolidados suelen convertir el balance al tipo de cambio de cierre, los resultados al tipo de cambio promedio y el capital al histórico, con la diferencia en un efecto por conversión dentro del capital. Las columnas en dólares de SAP (`sys_debit`, `sys_credit`) convierten cada asiento a su tipo de cambio del día, que sirve para resultados pero no necesariamente para el balance consolidado. No implementar la conversión del balance hasta que Finanzas defina el método. El consolidado elimina, además de ventas y compras intercompañía, los **saldos** intercompañía del balance (cuentas por cobrar de FASA contra cuentas por pagar de FGI, y cualquier préstamo o inversión entre ellas).
 
 ## 9. Puente FASA → FGI por pallet
 
@@ -325,7 +365,7 @@ Notas para A7, partiendo de la vista del partner:
 | Total Accounts Payable (USD) | Saldo abierto con proveedores | Requiere foto diaria |
 | Accounts Payable – Days | CxP ÷ costo de ventas × días del periodo | Fórmula por confirmar |
 | Accounts Receivable – USD | Saldo abierto de clientes | Requiere foto diaria |
-| AR – % Collected | Por definir | Esperar definición |
+| AR – % Collected | De las facturas de clientes cuyo vencimiento cae en la semana: importe cobrado al cierre de la semana ÷ importe que vencía. Facturas (`OINV`) por fecha de vencimiento y cobros aplicados (`ORCT`, `RCT2`) | Definición confirmada |
 | OTIF | — | Fuera de la Fase 1 |
 
 **Importante sobre las compras de fruta:** el pedido y la entrada de fruta se crean **después** de la selección, así que ya traen kilos, calibres, categorías y precios reales por lote.
@@ -370,7 +410,10 @@ Pedido de fruta (OPOR: u_huerta, u_cod_sagarpa, u_productor, u_num_lote)
 
 | Pendiente | Quién lo resuelve |
 |---|---|
-| `ref_account_mapping` (catálogo de cuentas común) | Finanzas |
+| `ref_account_mapping` (catálogo de cuentas común FASA + FGI) | Finanzas |
+| `ref_cashflow_mapping` (cuenta → operación, inversión o financiamiento) y `ref_equity_mapping` (conceptos de capital) | Finanzas |
+| Saldos iniciales al 31 de mayo de 2026 validados | Finanzas |
+| Método de conversión de moneda para los estados consolidados | Finanzas |
 | `ref_category_market` (categorías de fruta por mercado): se deriva de la descripción del artículo de fruta (`EXP` = exportación, `NAL` = nacional, `DESECHO` = merma); solo confirmar la regla una vez | Sourcing o Calidad |
 | `ref_organic_orchards` (huertas orgánicas certificadas) | Calidad |
 | `ref_orchard_eligibility` (huertas autorizadas por mercado: EE.UU., Canadá) | Calidad |
@@ -384,18 +427,57 @@ Pedido de fruta (OPOR: u_huerta, u_cod_sagarpa, u_productor, u_num_lote)
 
 ---
 
+### 14.1 Tarea: corregir el país en el maestro de socios de negocio
+
+**Dónde:** SAP Business One → Socios de negocios → **Datos maestros de socios de negocio** → buscar el cliente → ficha **Direcciones** → sección **Enviar a** (dirección de entrega) → campo **País**. Corregir también **Facturar a** si está vacío o en `XX`. Tabla en SAP: `CRD1`, campo `Country`, con `AdresType = 'S'` (enviar a) y `'B'` (facturar a).
+
+| Entidad | Código | Cliente | País correcto | Nota |
+|---|---|---|---|---|
+| FASA | CN-00022 | Angel Jesús Pérez Moreno | MX | 108,294 USD desde junio |
+| FASA | CN-00024 | Edgar Guillermo Ramírez Vélez | MX | 13,272 USD desde junio |
+| FASA | CN-00007 | Público en general | MX | |
+| FASA | CN-00027 | A.N.A. Compañía de Seguros | MX | Además, Finanzas decide si sus facturas son ventas o siniestros |
+| FGI | CLD-00039 | U.S. Food and Drug Administration | US | Finanzas decide si es venta |
+| FGI | CLD-00048 | Sotolongo Farms, LLC. | US | Sin ventas desde junio |
+
+Opcional: los clientes de FASA con `XX` o vacío sin ventas desde junio (CN-00014, CN-00015, CN-00016, CN-00017, CN-00018, CN-00019, CN-00020, CN-00021, PRO-00501).
+
+**Pendiente para Finanzas:** decidir si las facturas a aseguradoras (A.N.A., Qualitas) y a la FDA son ventas o cobros de otro tipo. Si no son ventas, se excluyen del margen por venta y se ven solo en el estado de resultados.
+
 ## 15. Lo que NO hay que hacer
 
 - Calcular un indicador dentro del tablero o de Lightdash: va en dbt.
 - Unir documentos por `DocNum`: usar `DocEntry`.
 - Usar el número de lote sin su sitio.
 - Corregir documentos en SAP para que "cuadre" el modelo: se documenta la excepción.
-- Tomar decisiones con datos de Railway.
+- Tomar decisiones con datos del dataset de desarrollo.
 - Escribir credenciales en el código o en Git.
 - Cambiar una regla de esta guía sin avisar a Omar.
 - En SQL de HANA, agrupar por posición (`GROUP BY 1, 2`): HANA no lo acepta. Agrupar por nombre de columna o desde una subconsulta.
 
 ---
+
+## 16. Decisiones de plataforma vigentes
+
+| Pieza | Decisión | Notas |
+|---|---|---|
+| Extracción | **dlt** (actual, funcionando) | Polytomic se evalúa por facilidad de uso: no tiene conector a SAP B1 HANA y lo desarrollará con Fronterra; prueba sin costo de 7 días |
+| Almacén | **BigQuery** (único, ya operando) | Datasets de desarrollo y producción separados |
+| Modelo | **dbt** en GitHub | Toda la lógica, métricas y descripciones bilingües |
+| Visualización e IA | **Lightdash, todo** | Dashboard de Rentabilidad, Weekly y estados financieros para el 8 de enero; después el Hub. Se descartan los tableros directivos fuera de Lightdash |
+
+**Prueba de Lightdash (21 días, extensible):** la prueba empieza al conectar y compilar el proyecto dbt. Para que cubra la evaluación del 8 de enero, acordar con Lightdash la extensión **antes** de arrancarla, o arrancarla cuando los primeros modelos estén listos (a más tardar en SEM 49) y pedir la extensión por escrito. Confirmar también: inicio de sesión con correo corporativo (SSO de Microsoft es complemento en Pro) y uso del agente de IA con la llave propia de la API de Claude.
+
+**Criterios para la prueba de 7 días de Polytomic** (decidir con evidencia, no por gusto):
+
+| Criterio | Qué comprobar |
+|---|---|
+| Cobertura | Lee todas las tablas de la guía en FASA y FGI, incluidos los campos de usuario (`U_...`) |
+| Incremental correcto | Carga por fecha de actualización y no pierde documentos con fecha de contabilización atrasada (regla 17) |
+| Conectividad | Cómo llega a HANA: el proveedor de SAP exige VPN para acceso externo (con costo), probablemente vía el Barracuda |
+| Nombres de tablas y columnas | Si difieren de los de dlt, el cambio solo debe tocar la capa de limpieza (staging), nunca los modelos de negocio |
+| Costo y soporte | Precio anual y tiempo de respuesta ante fallas |
+| Comparación | Mismo resultado que dlt en los cuadres contra contabilidad |
 
 ## Anexo A. Query de costo atómico y trazabilidad por pallet (SAP HANA, FASA)
 
@@ -511,3 +593,229 @@ ORDER BY C."Salida_Mercancia", C."LineNum", E."Pallet_ID"
 ```
 
 **Al traducirlo a dbt:** nombres en inglés (`pallet_id`, `site`, `packing_date`, `lot_id`, `orchard`, `sagarpa_code`, `grower`, `allocated_cost_mxn`...), llave de lote con sitio (`TN-30020`), y la bandera orgánica tomada de `ref_organic_orchards` cuando exista.
+
+---
+
+## Anexo B. Estados financieros con dlt + dbt (sin vistas en SAP)
+
+**Principio:** no se crean vistas en SAP. dlt replica las tablas contables crudas y toda la lógica vive en dbt. La vista del partner `XBXP_DASHBOARD_EDORESULTADOS` solo se usa como referencia de validación del estado de resultados.
+
+### B.1 Tablas a replicar (FASA y FGI)
+
+| Tabla | Contenido | Carga |
+|---|---|---|
+| `OACT` | Catálogo de cuentas (grupo, nivel, cuenta padre, afectable) | Recarga completa diaria |
+| `JDT1` | Líneas de asiento (cuenta, fecha, debe, haber, importes en moneda de sistema, socio, proyecto, centro de costo) | Incremental por fecha de actualización, con ventana |
+| `OJDT` | Encabezado de asiento (tipo de transacción, documento base) | Incremental por fecha de actualización, con ventana |
+| `OPRJ` | Proyectos | Recarga completa diaria |
+| `OOCR` | Centros de costo (si se usan) | Recarga completa diaria |
+| `OFPR` | Periodos contables (inicio del ejercicio fiscal) | Recarga completa diaria |
+| `OADM` | Moneda local y de sistema | Recarga completa diaria |
+| `ORTT` | Tipos de cambio | Recarga completa diaria |
+
+### B.2 Modelos dbt
+
+| Capa | Modelo | Grano | Qué hace |
+|---|---|---|---|
+| staging | `stg_sap__accounts` | Cuenta × entidad | Une `OACT` de FASA y FGI con columna `entity` |
+| staging | `stg_sap__journal_lines` | Línea de asiento × entidad | Une `JDT1` + `OJDT` de ambas entidades; llave `entity-trans_id-line_id` |
+| intermediate | `int_account_hierarchy` | Cuenta × entidad | Niveles 1 a 5 del catálogo (misma lógica que la vista del partner) |
+| intermediate | `int_general_ledger` | Línea de asiento | Libro mayor: líneas + jerarquía + `is_year_end_closing` + mes |
+| marts | `fct_trial_balance` | Cuenta × mes × entidad | Saldo inicial, cargos, abonos y saldo final, desde junio 2026 |
+| marts | `fct_income_statement_monthly` | Cuenta × mes × entidad | Estado de resultados (grupos 4 a 8, sin cierres) |
+| marts | `fct_balance_sheet_monthly` | Cuenta × mes × entidad | Balance general (grupos 1 a 3, saldo acumulado) + resultado del ejercicio en curso |
+| marts | `fct_equity_changes` | Concepto × mes × entidad | Variaciones en el capital (requiere `ref_equity_mapping`) |
+| marts | `fct_cash_flow` | Actividad × mes × entidad | Flujo de efectivo indirecto (requiere `ref_cashflow_mapping`) |
+| ref | `ref_opening_balances` | Cuenta × entidad | Saldos al 31 de mayo de 2026 validados por Finanzas |
+
+### B.3 Código de referencia (BigQuery)
+
+`models/staging/stg_sap__journal_lines.sql`
+
+```sql
+{% set entities = ['fasa', 'fgi'] %}
+
+{% for e in entities %}
+select
+    '{{ e | upper }}'                                   as entity,
+    l.trans_id,
+    l.line_id,
+    l.account                                           as account_code,
+    cast(l.ref_date as date)                            as posting_date,
+    h.trans_type,
+    h.base_ref,
+    l.short_name,
+    l.contra_act,
+    l.project                                           as project_code,
+    l.profit_code                                       as cost_center,
+    l.line_memo,
+    l.debit,
+    l.credit,
+    l.debit - l.credit                                  as amount_local,   -- MXN en FASA, USD en FGI
+    l.sys_deb - l.sys_cred                              as amount_usd      -- moneda de sistema (USD)
+from {{ source('sap_' ~ e, 'jdt1') }} l
+join {{ source('sap_' ~ e, 'ojdt') }} h on h.trans_id = l.trans_id
+{% if not loop.last %}union all{% endif %}
+{% endfor %}
+```
+
+`models/intermediate/int_general_ledger.sql`
+
+```sql
+select
+    j.*,
+    a.account_name,
+    a.group_mask,
+    a.level_1_group,
+    a.level_2_title,
+    a.level_3_subtitle,
+    a.level_4_detail,
+    {{ dbt.date_trunc('month', 'j.posting_date') }}     as posting_month,
+    (j.trans_type = -3)                                 as is_year_end_closing
+from {{ ref('stg_sap__journal_lines') }} j
+join {{ ref('int_account_hierarchy') }} a
+  on a.entity = j.entity and a.account_code = j.account_code
+where a.is_postable
+```
+
+`models/marts/fct_income_statement_monthly.sql`
+
+```sql
+select
+    entity,
+    posting_month,
+    group_mask,
+    level_2_title,
+    level_3_subtitle,
+    account_code,
+    account_name,
+    -sum(amount_local)  as amount_local,   -- presentación: ingresos positivos
+    -sum(amount_usd)    as amount_usd
+from {{ ref('int_general_ledger') }}
+where group_mask between 4 and 8
+  and not is_year_end_closing
+  and posting_date >= '2026-06-01'
+group by 1, 2, 3, 4, 5, 6, 7
+```
+
+> Nota: en dbt sobre BigQuery, `group by 1, 2...` sí funciona. La restricción de agrupar por nombre aplica solo al SQL que se corre directo en HANA.
+
+`models/marts/fct_trial_balance.sql`
+
+```sql
+with months as (
+    select distinct month_start as posting_month
+    from {{ ref('dim_date') }}
+    where month_start between '2026-06-01' and {{ dbt.current_timestamp() }}
+),
+accounts as (
+    select entity, account_code from {{ ref('int_account_hierarchy') }} where is_postable
+),
+movements as (
+    select entity, account_code, posting_month,
+           sum(debit) as debit, sum(credit) as credit, sum(amount_local) as net
+    from {{ ref('int_general_ledger') }}
+    where posting_date >= '2026-06-01'
+    group by 1, 2, 3
+),
+grid as (
+    select a.entity, a.account_code, m.posting_month,
+           coalesce(mv.debit, 0)  as debit,
+           coalesce(mv.credit, 0) as credit,
+           coalesce(mv.net, 0)    as net
+    from accounts a
+    cross join months m
+    left join movements mv
+      on mv.entity = a.entity and mv.account_code = a.account_code
+     and mv.posting_month = m.posting_month
+)
+select
+    g.entity,
+    g.account_code,
+    g.posting_month,
+    coalesce(o.opening_balance, 0)
+      + sum(g.net) over (partition by g.entity, g.account_code order by g.posting_month)
+      - g.net                                            as opening_balance,
+    g.debit,
+    g.credit,
+    coalesce(o.opening_balance, 0)
+      + sum(g.net) over (partition by g.entity, g.account_code order by g.posting_month)
+                                                         as closing_balance
+from grid g
+left join {{ ref('ref_opening_balances') }} o
+  on o.entity = g.entity and o.account_code = g.account_code
+```
+
+`models/marts/fct_balance_sheet_monthly.sql` (resumen de la lógica)
+
+- Cuentas de grupos 1 a 3: `closing_balance` de `fct_trial_balance` al mes.
+- Renglón adicional "Resultado del ejercicio en curso": suma de `amount_local` de grupos 4 a 8 sin cierres, desde el inicio del ejercicio fiscal (de `OFPR`) hasta el mes.
+
+### B.4 Pruebas obligatorias
+
+| Prueba | Regla |
+|---|---|
+| Cuadre del balance | Por entidad y mes: activo + pasivo + capital + resultado del ejercicio = 0 (signo debe − haber) |
+| Balanza contra SAP | `closing_balance` de cada cuenta = saldo de la balanza de SAP al cierre del mes |
+| Resultados contra la vista del partner | Estado de resultados de dbt = `XBXP_DASHBOARD_EDORESULTADOS` por mes |
+| Niveles del catálogo | Ninguna cuenta con más de 5 niveles (si las hay, extender la jerarquía) |
+| Mapeos completos | Toda cuenta de balance tiene actividad en `ref_cashflow_mapping`; toda cuenta de capital tiene concepto en `ref_equity_mapping` |
+
+Ejemplo de prueba singular (`tests/assert_balance_sheet_balances.sql`): debe devolver cero filas.
+
+```sql
+select entity, posting_month, sum(amount) as difference
+from {{ ref('fct_balance_sheet_monthly') }}
+group by 1, 2
+having abs(sum(amount)) > 0.01
+```
+
+### B.5 Ejemplo de YAML bilingüe
+
+```yaml
+models:
+  - name: fct_income_statement_monthly
+    description: >
+      Monthly income statement by entity and account (FASA, FGI). Excludes year-end closing entries.
+      Estado de resultados mensual por entidad y cuenta (FASA, FGI). Excluye asientos de cierre de ejercicio.
+    columns:
+      - name: amount_usd
+        description: >
+          Amount in USD, presentation sign (revenue positive, costs and expenses negative).
+          Importe en USD, con signo de presentación (ingresos positivos, costos y gastos negativos).
+```
+
+---
+
+## Anexo C. Dónde vive el proyecto dbt y cómo llega la semántica a cada herramienta
+
+**Fuente única: un repositorio de Git (GitHub) con el proyecto dbt.** Ahí viven todos los `.sql`, `.yml`, pruebas, macros y tablas de referencia pequeñas. Nada se define a mano dentro de Lightdash.
+
+```
+fronterra-hub/
+├── CLAUDE.md                     ← reglas para Claude Code
+├── docs/guia_desarrollo.md       ← esta guía
+├── dbt_project.yml               ← persist_docs activado
+├── models/
+│   ├── staging/      (*.sql + _staging.yml)
+│   ├── intermediate/ (*.sql + _intermediate.yml)
+│   └── marts/        (*.sql + _marts.yml: descripciones bilingües y métricas)
+├── seeds/            (tablas de referencia pequeñas en CSV)
+├── tests/            (pruebas singulares: cuadres contra contabilidad)
+├── macros/
+└── .github/workflows/ (corrida programada después de la carga de dlt)
+```
+
+Las credenciales nunca van al repositorio: viven en los secretos de GitHub y en el `profiles.yml` local de cada desarrollador.
+
+**Cómo llega la semántica a cada consumidor:**
+
+| Consumidor | De dónde toma el contexto | Cómo |
+|---|---|---|
+| **BigQuery** | Las descripciones de los `.yml` | `persist_docs` (`relation: true`, `columns: true`) copia cada descripción a la tabla y columna en BigQuery en cada corrida |
+| **Lightdash** | El repositorio + BigQuery | Lee el proyecto dbt (incluidas las métricas declaradas en el `meta` de los `.yml`) y consulta las tablas en BigQuery; se actualiza en cada despliegue |
+| **Claude Code** | El repositorio | Lee `CLAUDE.md`, esta guía y los modelos para construir |
+
+**Flujo de trabajo:** cada cambio en una rama → corrida en el dataset de desarrollo → revisión de otra persona → unión a la rama principal → la corrida programada actualiza producción, las descripciones en BigQuery y el despliegue de Lightdash.
+
+**Tablas de referencia que mantienen otras áreas** (mapeos de Finanzas, huertas de Calidad): si cambian seguido, una hoja de Google conectada a BigQuery como tabla externa evita que Finanzas tenga que editar CSV en Git; si casi no cambian, un `seed` en el repositorio.
