@@ -1,6 +1,7 @@
 """Pipeline dlt: SAP HANA -> BigQuery o PostgreSQL (Railway).
 
-El destino por defecto está en .dlt/config.toml ([fronterra] destination); se puede forzar con --destination.
+El destino y el dataset por defecto están en .dlt/config.toml ([fronterra] destination y dataset);
+el destino se puede forzar con --destination.
 
 Uso:
     python hana_pipeline.py                          # carga completa (replace) al destino por defecto
@@ -23,12 +24,35 @@ INCREMENTAL: dict[str, tuple[str, list[str]]] = {
 }
 
 DESTINATIONS = ("bigquery", "postgres")
-DATASET_NAME = "sap_hana_raw"  # dataset de BigQuery / esquema de Postgres (se crea si no existe)
+
+# Columnas que no se copian (tabla -> columnas, en minúsculas): secretos de integraciones de SAP
+EXCLUDE_COLUMNS: dict[str, set[str]] = {
+    "oadm": {"oauclisec", "oaucliid"},
+}
+
+
+def dataset_name() -> str:
+    # Dataset de BigQuery / esquema de Postgres (se crea si no existe). Guía: raw_sap_fasa, raw_sap_fgi
+    return dlt.config.get("fronterra.dataset") or "raw_sap_fasa"
 
 
 def make_pipeline(destination: str) -> dlt.Pipeline:
-    # Un pipeline (y estado local) por destino: hana_to_bigquery, hana_to_postgres
-    return dlt.pipeline(pipeline_name=f"hana_to_{destination}", destination=destination, dataset_name=DATASET_NAME)
+    # Un pipeline (y estado local) por dataset y destino, p. ej. raw_sap_fasa_to_bigquery
+    ds = dataset_name()
+    return dlt.pipeline(pipeline_name=f"{ds}_to_{destination}", destination=destination, dataset_name=ds)
+
+
+def loader_format(destination: str) -> str | None:
+    # BigQuery carga parquet más rápido y conserva tipos; Postgres usa su formato por defecto
+    return "parquet" if destination == "bigquery" else None
+
+
+def drop_excluded_columns(table: sa.Table) -> sa.Table:
+    excluded = EXCLUDE_COLUMNS.get(table.name.lower())
+    if excluded:
+        for col in [c for c in table.columns if c.name.lower() in excluded]:
+            table._columns.remove(col)
+    return table
 
 
 def hana_credentials() -> ConnectionStringCredentials:
@@ -83,8 +107,9 @@ def run_full(destination: str) -> None:
         backend="pyarrow",
         chunk_size=cfg["chunk_size"],
         reflection_level="full_with_precision",
+        table_adapter_callback=drop_excluded_columns,
     )
-    info = make_pipeline(destination).run(source, write_disposition="replace")
+    info = make_pipeline(destination).run(source, write_disposition="replace", loader_file_format=loader_format(destination))
     print(info)
 
 
@@ -103,10 +128,11 @@ def run_incremental(destination: str) -> None:
             chunk_size=cfg["chunk_size"],
             incremental=dlt.sources.incremental(cursor),
             reflection_level="full_with_precision",
+            table_adapter_callback=drop_excluded_columns,
         )
         res.apply_hints(primary_key=pk, write_disposition="merge")
         resources.append(res)
-    info = make_pipeline(destination).run(resources)
+    info = make_pipeline(destination).run(resources, loader_file_format=loader_format(destination))
     print(info)
 
 

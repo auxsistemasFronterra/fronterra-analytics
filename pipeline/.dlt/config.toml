@@ -4,23 +4,33 @@ log_level = "INFO"
 # --- Destino por defecto: "bigquery" o "postgres" (se puede forzar con --destination) ---
 [fronterra]
 destination = "bigquery"
+# Dataset de BigQuery / esquema de Postgres donde cae el crudo (guía, sección 4.1). FGI usará raw_sap_fgi.
+dataset = "raw_sap_fasa"
 
-# --- BigQuery: proyecto bigquery-515016, dataset sap_hana_raw ---
+# --- BigQuery: proyecto bigquery-515016 ---
 [destination.bigquery]
 location = "northamerica-south1"
 
 # --- Origen: SAP HANA ---
 [sources.hana]
-# Esquema de HANA a leer (en mayúsculas, tal como existe en HANA)
-schema = "FRONTERRA_PROTO"
-# Tablas a cargar. Lista vacía = todas las tablas del esquema
+# Esquema de HANA a leer (en mayúsculas, tal como existe en HANA).
+# FASA_PROD = producción de FASA (decisión del usuario, 20-nov-2026). FRONTERRA_PROTO era la copia de pruebas.
+schema = "FASA_PROD"
+# Tablas a cargar (guía v2, sección 5 y Anexo B, más OITB del Anexo A). Lista vacía = todas las tablas del esquema
 tables = [
-  # Ventas: pedidos, facturas y notas de crédito (encabezado + detalle)
-  "ORDR", "RDR1", "OINV", "INV1", "ORIN", "RIN1",
-  # Catálogos mínimos para interpretar ventas: clientes, artículos, vendedores
-  "OCRD", "OITM", "OSLP",
+  # Ventas: pedidos, entregas, facturas (con direcciones), notas de crédito
+  "ORDR", "RDR1", "ODLN", "DLN1", "OINV", "INV1", "INV12", "ORIN", "RIN1",
+  # Cobros de clientes
+  "ORCT", "RCT2",
+  # Compras: pedidos, entradas de mercancía, facturas de proveedor
+  "OPOR", "POR1", "OPDN", "PDN1", "OPCH", "PCH1",
+  # Inventario y producción: salidas, entradas, lotes y su bitácora
+  "OIGE", "IGE1", "OIGN", "IGN1", "OBTN", "OITL", "ITL1",
+  # Contabilidad
+  "OJDT", "JDT1", "OACT", "OOCR", "OFPR", "OADM",
+  # Catálogos
+  "OITM", "OITB", "OITW", "OWHS", "OCRD", "OCRG", "CRD1", "NNM1", "OPRJ", "ORTT",
 ]
-# Pendientes para después: OACT, OWHS, OITW, OPCH, PCH1, OJDT, JDT1
 # Tamaño de lote por consulta
 chunk_size = 50000
 

@@ -49,16 +49,13 @@ La app `dashboard/` (página + MCP) queda como herramienta de exploración: la g
 Capas (guía, sección 4): `raw_sap_fasa`, `raw_sap_fgi` (crudo) → `staging` (`stg_sap__*`) → `intermediate` (`int_*`) → `marts`
 (`fct_*`, `dim_*`) + `ref` (tablas de Finanzas/Calidad).
 
-- **Desde 17-nov-2026 el pipeline carga por defecto a BigQuery** (commit en `main` desde el servidor): proyecto `bigquery-515016`,
-  dataset `sap_hana_raw`, región `northamerica-south1`, las mismas 9 tablas y nombres que en Postgres (conteos idénticos a HANA).
-  Postgres (`hanaDB.sap_hana_raw`) es lo que lee hoy el dashboard, pero ya no se actualiza: queda congelado hasta que el
-  dashboard migre a BigQuery y después se apaga. El script se llama ahora `pipeline/hana_pipeline.py`.
-
-Estado real al 12-nov-2026:
-- Solo existe el esquema crudo `sap_hana_raw` (se renombrará a `raw_sap_fasa`) con 9 tablas de ventas de FASA: oinv, inv1, orin,
-  rin1, ordr, rdr1, ocrd, oitm, oslp. Carga completa a mano, sin tarea programada. Faltan ~30 tablas de la sección 5 de la guía
-  (más `OITB`, que usa el Anexo A), todo FGI y la base MS SQL de costeo de maquila.
-- Se carga el esquema HANA `FRONTERRA_PROTO`. Existe también `FASA_PROD` (más reciente). **Por confirmar cuál es producción.**
+Estado real al 20-nov-2026:
+- **Crudo de FASA en BigQuery: dataset `raw_sap_fasa`** con las **40 tablas** de la guía v2 (sección 5, Anexo B y `OITB`), leídas
+  del esquema HANA **`FASA_PROD`** (producción). Primera carga completa el 20-nov-2026: 5.47 M filas, 5.55 GB; las 40 tablas cuadran
+  con HANA (`pipeline/check_counts.py`). Carga completa a mano, sin tarea programada ni incremental. Detalle en `pipeline/CLAUDE.md`.
+- El dataset viejo `sap_hana_raw` (9 tablas de `FRONTERRA_PROTO`, en BigQuery y en Postgres) ya no se actualiza; se conserva.
+  Postgres (`hanaDB`) es lo que lee la app `dashboard/`; **no borrar su conexión** (el usuario la quiere conservar).
+- Falta todo FGI (`raw_sap_fgi`) y la base MS SQL de costeo de maquila.
 - dbt no existe todavía. No hay `marts`, ni pruebas, ni fotos diarias.
 - En Postgres las tablas y columnas están en minúsculas snake_case (`DocEntry` → `doc_entry`). HANA solo es accesible desde el
   servidor Windows de la red interna.
@@ -81,6 +78,8 @@ Estado real al 12-nov-2026:
   `dev` y `prod` separados; todo se muestra en Lightdash (se descartan los paneles de Claude para directores); agrega alcance del MVP
   (1.1), los cuatro estados financieros (8.1 y Anexo B), tablas `ORCT`, `RCT2`, `CRD1`, `INV12`, `OOCR`, `OFPR`, `OADM`, la definición
   de AR – % Collected y la corrección de países en el maestro de clientes (14.1).
+- 20-nov-2026: **`FASA_PROD` es la base de producción de FASA** (decisión del usuario; `FRONTERRA_PROTO` era la copia de pruebas).
+  El crudo de FASA vive en el dataset `raw_sap_fasa`.
 - Todo cambio entra como rama/propuesta en Git y otra persona lo revisa antes de unirlo a `main`.
 - 17-nov-2026: el repositorio de GitHub es **público** y el usuario decidió dejarlo así. Todo lo que se suba lo puede ver
   cualquiera: nunca subir credenciales, datos de clientes ni resultados de consultas.
@@ -94,7 +93,7 @@ Dos sesiones de Claude (servidor Windows y PC Windows) clonan este mismo repo co
 
 ## Pendientes
 Preguntas para Omar (bloquean):
-- [ ] ¿`FRONTERRA_PROTO` o `FASA_PROD` es la base de producción de FASA? (PROTO llega al 7-nov-2026, FASA_PROD al 10-nov-2026.)
+- [x] ~~¿`FRONTERRA_PROTO` o `FASA_PROD`?~~ `FASA_PROD` (decisión del usuario, 20-nov-2026). Conviene que Omar lo ratifique.
 - [ ] Usuario de solo lectura para el SAP de FGI.
 - [x] ~~Aprobar todo en BigQuery~~: la guía v2 lo confirma, con datasets `dev` y `prod` separados.
 - [ ] ¿`bigquery-515016` es el proyecto definitivo? Quién es el dueño del pago y el presupuesto con alertas (guía v2, sección 3).
@@ -117,9 +116,10 @@ Lightdash (guía v2, sección 16):
 - [ ] Cuenta de servicio de solo lectura para Lightdash, limitada al dataset de producción.
 
 pipeline (dlt):
-- [ ] Renombrar el destino a `raw_sap_fasa` y agregar las tablas de la sección 5 de la guía + `OITB` + las nuevas de la guía v2:
-      `ORCT`, `RCT2`, `CRD1`, `INV12` (sección 5) y `OOCR`, `OFPR`, `OADM` (Anexo B).
-- [ ] Carga incremental por `update_date` con ventana de días y merge por llave (el script ya trae el modo `--incremental`).
+- [x] Dataset `raw_sap_fasa` con las 40 tablas de la guía v2 desde `FASA_PROD` (20-nov-2026, conteos cuadrados).
+- [ ] Carga incremental con ventana de días y merge por llave. Los encabezados tienen `UpdateDate`; las líneas no: recargarlas por
+      los `DocEntry` de los encabezados actualizados. Recarga completa diaria de catálogos.
+- [ ] Borrar el dataset viejo `sap_hana_raw` de BigQuery cuando el usuario lo apruebe.
 - [ ] Tarea programada diaria en el servidor, con registro de errores.
 - [ ] **Fotos diarias** de `OITW`, CxP y CxC: activarlas ya (la historia empieza el día que se activan).
 - [x] Verificar que dbt Core funcione con el Python del servidor (3.14): dbt-core 1.12.7 + dbt-bigquery 1.12.4 instalan e importan

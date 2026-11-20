@@ -7,6 +7,7 @@ Estado: redactadas, **sin respuesta registrada**. Anotar aquí la respuesta de c
 1. **Base de origen de FASA.** Hoy cargamos el esquema `FRONTERRA_PROTO` de HANA, pero también existe `FASA_PROD`, con facturas más
    recientes (PROTO llega al 7 de noviembre y FASA_PROD al 10). ¿Cuál es la base de producción contra la que debemos cuadrar con
    contabilidad?
+   *Decisión del usuario (20-nov-2026):* `FASA_PROD`. El crudo `raw_sap_fasa` ya se carga de ahí. Falta que Omar lo ratifique.
 2. **Acceso a FGI.** No tenemos usuario ni conexión al SAP de FGI. ¿Quién nos da el usuario de solo lectura y para cuándo? Sin eso
    no se puede empezar la Fase B (consolidado y eliminaciones).
 3. **BigQuery.** La guía lo pone como producción a mediados de diciembre, pero la organización bloquea las llaves de cuenta de
