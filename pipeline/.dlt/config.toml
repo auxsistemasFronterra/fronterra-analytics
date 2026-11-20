@@ -4,8 +4,20 @@ log_level = "INFO"
 # --- Destino por defecto: "bigquery" o "postgres" (se puede forzar con --destination) ---
 [fronterra]
 destination = "bigquery"
-# Dataset de BigQuery / esquema de Postgres donde cae el crudo (guía, sección 4.1). FGI usará raw_sap_fgi.
+# Entidad por defecto (se puede forzar con --entity fasa|fgi)
+entity = "fasa"
+
+# --- Entidades: esquema de HANA que se lee y dataset donde cae el crudo (guía, sección 4.1) ---
+# Las dos viven en el mismo servidor HANA. Esquemas en mayúsculas, tal como existen en HANA.
+[entities.fasa]
+# FASA_PROD = producción de FASA (decisión del usuario, 20-nov-2026). FRONTERRA_PROTO era la copia de pruebas.
+schema = "FASA_PROD"
 dataset = "raw_sap_fasa"
+
+[entities.fgi]
+# FGI_PROD = producción de FGI (decisión del usuario, 20-nov-2026). FGI_TEST y FGI no se cargan.
+schema = "FGI_PROD"
+dataset = "raw_sap_fgi"
 
 # --- BigQuery: proyecto bigquery-515016 ---
 [destination.bigquery]
@@ -13,10 +25,8 @@ location = "northamerica-south1"
 
 # --- Origen: SAP HANA ---
 [sources.hana]
-# Esquema de HANA a leer (en mayúsculas, tal como existe en HANA).
-# FASA_PROD = producción de FASA (decisión del usuario, 20-nov-2026). FRONTERRA_PROTO era la copia de pruebas.
-schema = "FASA_PROD"
-# Tablas a cargar (guía v2, sección 5 y Anexo B, más OITB del Anexo A). Lista vacía = todas las tablas del esquema
+# Tablas a cargar, las mismas para todas las entidades (guía v2, sección 5 y Anexo B, más OITB del Anexo A).
+# Lista vacía = todas las tablas del esquema
 tables = [
   # Ventas: pedidos, entregas, facturas (con direcciones), notas de crédito
   "ORDR", "RDR1", "ODLN", "DLN1", "OINV", "INV1", "INV12", "ORIN", "RIN1",

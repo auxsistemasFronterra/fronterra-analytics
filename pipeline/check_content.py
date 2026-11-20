@@ -5,6 +5,7 @@ Complementa a check_counts.py: que cuadren las filas no garantiza que cuadren lo
 Uso (desde pipeline/):
     python check_content.py            # todas las revisiones
     python check_content.py OINV JDT1  # solo esas tablas
+    python check_content.py --entity fgi  # FGI_PROD vs raw_sap_fgi
 
 Sale con código 1 si alguna revisión no cuadra. SAP sigue registrando documentos mientras corre: si hay una diferencia
 justo después de una carga, vuelve a cargar y revisar antes de buscar un error.
@@ -13,11 +14,10 @@ justo después de una carga, vuelve a cargar y revisar antes de buscar un error.
 import sys
 from decimal import Decimal
 
-import dlt
 import sqlalchemy as sa
-from dlt.sources.credentials import ConnectionStringCredentials
 
-from check_counts import bigquery_client
+from check_counts import bigquery_client, parse_args
+from hana_pipeline import dataset_name, hana_credentials, hana_schema
 
 
 def _date(hana_col: str, bq_col: str, fn: str) -> tuple[str, str]:
@@ -106,16 +106,16 @@ def same(a, b) -> bool:
     return str(a) == str(b)
 
 
-def main(only: list[str]) -> int:
-    schema = dlt.config["sources.hana.schema"]
-    dataset = dlt.config.get("fronterra.dataset") or "raw_sap_fasa"
+def main(only: list[str], entity: str) -> int:
+    schema = hana_schema(entity)
+    dataset = dataset_name(entity)
     tables = [t.upper() for t in only] if only else list(CHECKS)
     unknown = [t for t in tables if t not in CHECKS]
     if unknown:
         print(f"Sin revisiones definidas para: {', '.join(unknown)}. Disponibles: {', '.join(CHECKS)}")
         return 2
 
-    engine = sa.create_engine(dlt.secrets.get("sources.hana.credentials", ConnectionStringCredentials).to_url())
+    engine = sa.create_engine(hana_credentials(entity).to_url())
     bq = bigquery_client()
     total = bad = 0
     print(f"HANA {schema} vs BigQuery {dataset}\n")
@@ -137,4 +137,5 @@ def main(only: list[str]) -> int:
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")  # acentos en la consola de Windows
-    sys.exit(main(sys.argv[1:]))
+    args = parse_args(__doc__)
+    sys.exit(main(args.tables, args.entity))

@@ -10,6 +10,8 @@ Estado: redactadas, **sin respuesta registrada**. Anotar aquí la respuesta de c
    *Decisión del usuario (20-nov-2026):* `FASA_PROD`. El crudo `raw_sap_fasa` ya se carga de ahí. Falta que Omar lo ratifique.
 2. **Acceso a FGI.** No tenemos usuario ni conexión al SAP de FGI. ¿Quién nos da el usuario de solo lectura y para cuándo? Sin eso
    no se puede empezar la Fase B (consolidado y eliminaciones).
+   *Avance 20-nov-2026:* FGI está en el mismo servidor HANA (esquema `FGI_PROD`) y el usuario actual ya lo puede leer. El crudo
+   `raw_sap_fgi` ya está cargado y cuadrado. Falta el usuario de solo lectura propio de FGI que pide la guía.
 3. **BigQuery.** La guía lo pone como producción a mediados de diciembre, pero la organización bloquea las llaves de cuenta de
    servicio de GCP y el proyecto no tenía facturación activa. ¿Quién resuelve el acceso y la facturación?
    *Avance 17-nov-2026:* ya hay un proyecto nuevo con facturación (`bigquery-515016`) y el pipeline carga ahí las 9 tablas. Falta

@@ -6,13 +6,17 @@ Lee también el `CLAUDE.md` de la raíz del repo (arquitectura, reglas de datos 
 `hana_pipeline.py` usa **dlt** (`sql_database`, backend `pyarrow`) para copiar tablas de SAP Business One
 desde SAP HANA a **BigQuery** (destino por defecto) o, opcionalmente, a **PostgreSQL en Railway**.
 
-- **Origen:** SAP HANA 2.0 on-premise (host y puerto en `.dlt/secrets.toml`, base `NDB`), esquema **`FASA_PROD`**
-  (producción de FASA, decisión del usuario 20-nov-2026; configurable en `.dlt/config.toml` → `sources.hana.schema`).
-  `FRONTERRA_PROTO` era la copia de pruebas que se cargó hasta el 19-nov. HANA solo es accesible desde la red interna
-  (el servidor Windows `ftruser16`).
-- **Destino y dataset:** `.dlt/config.toml` → `[fronterra] destination = "bigquery"` y `dataset = "raw_sap_fasa"`
-  (guía, sección 4.1; FGI usará `raw_sap_fgi`). El destino se fuerza con `--destination bigquery|postgres`.
-  Pipeline dlt: `<dataset>_to_<destino>`, p. ej. `raw_sap_fasa_to_bigquery`.
+- **Entidades** (`--entity fasa|fgi`, por defecto `fasa`; `.dlt/config.toml` → `[entities.<entidad>]`): las dos viven en el
+  mismo SAP HANA 2.0 on-premise (host y puerto en `.dlt/secrets.toml`, base `NDB`).
+  | Entidad | Esquema HANA | Dataset | Notas |
+  |---|---|---|---|
+  | FASA | `FASA_PROD` | `raw_sap_fasa` | Moneda local MXN, sistema USD. `FRONTERRA_PROTO` era la copia de pruebas cargada hasta el 19-nov |
+  | FGI | `FGI_PROD` | `raw_sap_fgi` | Moneda local y sistema USD. `FGI_TEST` y `FGI` no se cargan |
+  Ambas decisiones del usuario, 20-nov-2026. HANA solo es accesible desde la red interna (el servidor Windows `ftruser16`).
+- **Credenciales por entidad:** si existe `[sources.hana_<entidad>.credentials]` en `secrets.toml` se usa ese usuario; si no, el
+  compartido `[sources.hana.credentials]`. Hoy FGI se lee con el usuario compartido (la guía pide uno propio por entidad).
+- **Destino:** `.dlt/config.toml` → `[fronterra] destination = "bigquery"` (guía, sección 4.1). Se fuerza con
+  `--destination bigquery|postgres`. Pipeline dlt: `<dataset>_to_<destino>`, p. ej. `raw_sap_fasa_to_bigquery`, `raw_sap_fgi_to_bigquery`.
   - **BigQuery:** proyecto `bigquery-515016`, región `northamerica-south1`, cuenta de servicio
     `dlt-bigquery@bigquery-515016.iam.gserviceaccount.com` (llave en `secrets.toml`). Carga en formato parquet.
   - **Postgres (Railway, base `hanaDB`):** se conserva por decisión del usuario (19-nov-2026), **no borrar** su conexión.
@@ -20,9 +24,12 @@ desde SAP HANA a **BigQuery** (destino por defecto) o, opcionalmente, a **Postgr
   - **Dataset viejo `sap_hana_raw`** (9 tablas de `FRONTERRA_PROTO`, en BigQuery y en Postgres): ya no se actualiza. Se conserva
     mientras se valida `raw_sap_fasa`; borrarlo solo cuando el usuario lo pida.
 
-## Tablas que carga (`raw_sap_fasa`)
-Lista en `.dlt/config.toml` → `sources.hana.tables`: las **40 tablas** de la guía v2 (sección 5, Anexo B y `OITB` del Anexo A).
-Primera carga completa 20-nov-2026: **5,469,084 filas, 5.55 GB, 13 min**; las 40 tablas cuadran con HANA (`check_counts.py`)
+## Tablas que carga (`raw_sap_fasa` y `raw_sap_fgi`)
+Lista en `.dlt/config.toml` → `sources.hana.tables`, la misma para las dos entidades: las **40 tablas** de la guía v2 (sección 5,
+Anexo B y `OITB` del Anexo A).
+**FGI**, primera carga completa 20-nov-2026: **113,103 filas, 131 MB, 2 min**; 40/40 conteos y 31/31 revisiones de contenido cuadran.
+Las más grandes: `JDT1` 34 mil, `ITL1` 16 mil. Casi sin fabricación (`OIGE` 8, `OIGN` 6 documentos). Facturas desde jun-2026.
+**FASA**, primera carga completa 20-nov-2026: **5,469,084 filas, 5.55 GB, 13 min**; las 40 tablas cuadran con HANA (`check_counts.py`)
 y las 31 revisiones de contenido también (`check_content.py`: sumas en MXN y USD, cantidades, fechas, largos de texto, llaves).
 Ambos scripts salen con código 1 si algo no cuadra. **SAP sigue vivo:** una hora después de la carga ya había 1 asiento nuevo
 (2 renglones de `JDT1`) y 2 socios nuevos, y los scripts lo marcan como diferencia. Antes de buscar un error, revisar si son
@@ -57,7 +64,9 @@ copy .dlt\secrets.toml.example .dlt\secrets.toml   # y llenar credenciales reale
 
 ## Correr
 ```bash
-.venv\Scripts\python.exe hana_pipeline.py                          # carga completa (replace) al destino por defecto (BigQuery)
+.venv\Scripts\python.exe hana_pipeline.py                          # carga completa (replace) de FASA al destino por defecto (BigQuery)
+.venv\Scripts\python.exe hana_pipeline.py --entity fgi             # carga completa de FGI (raw_sap_fgi)
+.venv\Scripts\python.exe check_counts.py --entity fgi              # los dos scripts de cuadre aceptan --entity (por defecto FASA)
 .venv\Scripts\python.exe check_counts.py                           # cuadre de filas HANA vs BigQuery (COUNT(*), todas las tablas)
 .venv\Scripts\python.exe check_counts.py OINV JDT1                 # cuadre solo de esas tablas
 .venv\Scripts\python.exe check_content.py                          # cuadre de contenido: importes, USD, cantidades, fechas, textos, llaves
@@ -96,8 +105,8 @@ targets `dev` y `prod` en datasets separados. Adaptador **dbt-bigquery**. Probad
 con Python 3.14.5; crear el venv en una ruta corta (Windows sin rutas largas). `profiles.yml` no va al repo.
 
 ## Brecha contra la guía (20-nov-2026)
-- Hecho: dataset `raw_sap_fasa` con las 40 tablas de la guía v2 desde `FASA_PROD`.
-- Falta FGI (`raw_sap_fgi`): no hay usuario de solo lectura del SAP de FGI.
+- Hecho: datasets `raw_sap_fasa` (desde `FASA_PROD`) y `raw_sap_fgi` (desde `FGI_PROD`) con las 40 tablas de la guía v2.
+- Falta el usuario de solo lectura propio de FGI (hoy usa el de FASA).
 - Carga `replace` a mano; la guía pide incremental con ventana, recarga completa diaria de catálogos y **fotos diarias** de `OITW`,
   CxP y CxC (activarlas ya: la historia empieza el día que se activan).
 - Falta la segunda instancia de dlt para la base MS SQL de costeo de maquila (máquina en sitio).

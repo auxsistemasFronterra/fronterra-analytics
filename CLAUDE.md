@@ -55,7 +55,10 @@ Estado real al 20-nov-2026:
   con HANA (`pipeline/check_counts.py`). Carga completa a mano, sin tarea programada ni incremental. Detalle en `pipeline/CLAUDE.md`.
 - El dataset viejo `sap_hana_raw` (9 tablas de `FRONTERRA_PROTO`, en BigQuery y en Postgres) ya no se actualiza; se conserva.
   Postgres (`hanaDB`) es lo que lee la app `dashboard/`; **no borrar su conexión** (el usuario la quiere conservar).
-- Falta todo FGI (`raw_sap_fgi`) y la base MS SQL de costeo de maquila.
+- **Crudo de FGI en BigQuery: dataset `raw_sap_fgi`** con las mismas 40 tablas, leídas del esquema HANA **`FGI_PROD`** (mismo
+  servidor HANA que FASA). Primera carga completa el 20-nov-2026: 113 mil filas, 131 MB, 2 min; 40/40 conteos y 31/31 revisiones
+  de contenido cuadran. Moneda local y de sistema USD. Se lee con el mismo usuario HANA que FASA (falta el usuario propio).
+- Falta la base MS SQL de costeo de maquila.
 - dbt no existe todavía. No hay `marts`, ni pruebas, ni fotos diarias.
 - En Postgres las tablas y columnas están en minúsculas snake_case (`DocEntry` → `doc_entry`). HANA solo es accesible desde el
   servidor Windows de la red interna.
@@ -80,6 +83,8 @@ Estado real al 20-nov-2026:
   de AR – % Collected y la corrección de países en el maestro de clientes (14.1).
 - 20-nov-2026: **`FASA_PROD` es la base de producción de FASA** (decisión del usuario; `FRONTERRA_PROTO` era la copia de pruebas).
   El crudo de FASA vive en el dataset `raw_sap_fasa`.
+- 20-nov-2026: **`FGI_PROD` es la base de producción de FGI** (decisión del usuario; `FGI_TEST` y `FGI` no se cargan). Está en el
+  mismo servidor HANA y el usuario HANA actual ya la puede leer, así que se cargó a `raw_sap_fgi` sin esperar el usuario propio.
 - Todo cambio entra como rama/propuesta en Git y otra persona lo revisa antes de unirlo a `main`.
 - 17-nov-2026: el repositorio de GitHub es **público** y el usuario decidió dejarlo así. Todo lo que se suba lo puede ver
   cualquiera: nunca subir credenciales, datos de clientes ni resultados de consultas.
@@ -94,7 +99,8 @@ Dos sesiones de Claude (servidor Windows y PC Windows) clonan este mismo repo co
 ## Pendientes
 Preguntas para Omar (bloquean):
 - [x] ~~¿`FRONTERRA_PROTO` o `FASA_PROD`?~~ `FASA_PROD` (decisión del usuario, 20-nov-2026). Conviene que Omar lo ratifique.
-- [ ] Usuario de solo lectura para el SAP de FGI.
+- [ ] Usuario de solo lectura **propio** para FGI (guía, sección 5). Ya no bloquea: `raw_sap_fgi` se carga con el usuario de FASA.
+      Cuando exista, va en `secrets.toml` como `[sources.hana_fgi.credentials]`.
 - [x] ~~Aprobar todo en BigQuery~~: la guía v2 lo confirma, con datasets `dev` y `prod` separados.
 - [ ] ¿`bigquery-515016` es el proyecto definitivo? Quién es el dueño del pago y el presupuesto con alertas (guía v2, sección 3).
 - [x] ~~"Paneles de Claude"~~: la guía v2 lo resuelve, todo va en Lightdash.
@@ -117,6 +123,7 @@ Lightdash (guía v2, sección 16):
 
 pipeline (dlt):
 - [x] Dataset `raw_sap_fasa` con las 40 tablas de la guía v2 desde `FASA_PROD` (20-nov-2026, conteos cuadrados).
+- [x] Dataset `raw_sap_fgi` con las 40 tablas desde `FGI_PROD` (20-nov-2026, conteos y contenido cuadrados).
 - [ ] Carga incremental con ventana de días y merge por llave. Los encabezados tienen `UpdateDate`; las líneas no: recargarlas por
       los `DocEntry` de los encabezados actualizados. Recarga completa diaria de catálogos.
 - [ ] Borrar el dataset viejo `sap_hana_raw` de BigQuery cuando el usuario lo apruebe.
