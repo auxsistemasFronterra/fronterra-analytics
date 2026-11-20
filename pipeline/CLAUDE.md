@@ -22,7 +22,11 @@ desde SAP HANA a **BigQuery** (destino por defecto) o, opcionalmente, a **Postgr
 
 ## Tablas que carga (`raw_sap_fasa`)
 Lista en `.dlt/config.toml` → `sources.hana.tables`: las **40 tablas** de la guía v2 (sección 5, Anexo B y `OITB` del Anexo A).
-Primera carga completa 20-nov-2026: **5,469,084 filas, 5.55 GB, 13 min**; las 40 tablas cuadran con HANA (`check_counts.py`).
+Primera carga completa 20-nov-2026: **5,469,084 filas, 5.55 GB, 13 min**; las 40 tablas cuadran con HANA (`check_counts.py`)
+y las 31 revisiones de contenido también (`check_content.py`: sumas en MXN y USD, cantidades, fechas, largos de texto, llaves).
+Ambos scripts salen con código 1 si algo no cuadra. **SAP sigue vivo:** una hora después de la carga ya había 1 asiento nuevo
+(2 renglones de `JDT1`) y 2 socios nuevos, y los scripts lo marcan como diferencia. Antes de buscar un error, revisar si son
+documentos posteriores a la carga (p. ej. `TransId` o `UpdateDate` mayores a los de BigQuery) o volver a cargar y revisar.
 
 | Grupo | Tablas | Más grandes |
 |---|---|---|
@@ -56,6 +60,8 @@ copy .dlt\secrets.toml.example .dlt\secrets.toml   # y llenar credenciales reale
 .venv\Scripts\python.exe hana_pipeline.py                          # carga completa (replace) al destino por defecto (BigQuery)
 .venv\Scripts\python.exe check_counts.py                           # cuadre de filas HANA vs BigQuery (COUNT(*), todas las tablas)
 .venv\Scripts\python.exe check_counts.py OINV JDT1                 # cuadre solo de esas tablas
+.venv\Scripts\python.exe check_content.py                          # cuadre de contenido: importes, USD, cantidades, fechas, textos, llaves
+.venv\Scripts\python.exe check_content.py JDT1                     # solo esa tabla (las revisiones están en CHECKS del script)
 .venv\Scripts\python.exe hana_pipeline.py --destination postgres   # solo si hiciera falta (Postgres se conserva)
 .venv\Scripts\python.exe hana_pipeline.py --test                   # solo prueba conexión a HANA y lista esquemas/tablas
 .venv\Scripts\python.exe hana_pipeline.py --incremental            # merge por cursor; requiere llenar el dict INCREMENTAL del script
