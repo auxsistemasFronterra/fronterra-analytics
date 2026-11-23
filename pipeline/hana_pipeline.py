@@ -7,22 +7,50 @@ Uso:
     python hana_pipeline.py                          # carga completa (replace) de FASA al destino por defecto
     python hana_pipeline.py --entity fgi             # carga completa de FGI (raw_sap_fgi)
     python hana_pipeline.py --destination postgres   # carga completa a Postgres (Railway)
-    python hana_pipeline.py --incremental            # carga incremental (merge) usando las columnas de INCREMENTAL
+    python hana_pipeline.py --incremental            # incremental: documentos de los últimos 7 días + catálogos completos
+    python hana_pipeline.py --incremental --days 30  # ventana más amplia (p. ej. después de varios días sin cargar)
     python hana_pipeline.py --test                   # solo prueba la conexión a HANA y lista tablas
+
+Incremental (ventana de días, sin estado: siempre recarga los últimos N días, así un día fallido se recupera solo):
+- Encabezados (WINDOW_TABLES): filas con UpdateDate (o CreateDate en OITL) dentro de la ventana.
+- Líneas (CHILD_TABLES): todas las líneas de esos encabezados, aunque no tengan fecha propia.
+- Ambos se escriben con merge "delete-insert" por la llave del documento: en BigQuery se borran las filas de esos
+  documentos y se insertan las de HANA (así también desaparecen líneas que se quitaron de un pedido abierto).
+- El resto de las tablas (catálogos, OBTN) se recarga completa (replace): son chicas.
+SAP no borra documentos contabilizados (los cancela, y eso cambia su UpdateDate); para lo raro, la carga completa semanal.
 """
 
 import argparse
+from datetime import date, timedelta
 
 import dlt
 import sqlalchemy as sa
 from dlt.sources.credentials import ConnectionStringCredentials
 from dlt.sources.sql_database import sql_database, sql_table
 
-# Configura aquí las tablas incrementales: tabla -> (columna de cursor, llave primaria)
-# Ejemplo: "OINV": ("UpdateDate", ["DocEntry"])
-INCREMENTAL: dict[str, tuple[str, list[str]]] = {
-    # "MI_TABLA": ("FECHA_MODIFICACION", ["ID"]),
+# Encabezados que se leen por ventana de fechas: tabla -> (columna de fecha, llave del documento)
+WINDOW_TABLES: dict[str, tuple[str, str]] = {
+    "OINV": ("UpdateDate", "DocEntry"), "ORIN": ("UpdateDate", "DocEntry"),
+    "ORDR": ("UpdateDate", "DocEntry"), "ODLN": ("UpdateDate", "DocEntry"),
+    "OPOR": ("UpdateDate", "DocEntry"), "OPDN": ("UpdateDate", "DocEntry"), "OPCH": ("UpdateDate", "DocEntry"),
+    "OIGE": ("UpdateDate", "DocEntry"), "OIGN": ("UpdateDate", "DocEntry"),
+    "ORCT": ("UpdateDate", "DocEntry"),
+    "OJDT": ("UpdateDate", "TransId"),
+    "OITL": ("CreateDate", "LogEntry"),  # bitácora de lotes: solo se agregan filas, no tiene UpdateDate
 }
+
+# Líneas sin fecha propia: tabla -> (encabezado, columna de la línea que apunta a la llave del encabezado)
+CHILD_TABLES: dict[str, tuple[str, str]] = {
+    "INV1": ("OINV", "DocEntry"), "INV12": ("OINV", "DocEntry"), "RIN1": ("ORIN", "DocEntry"),
+    "RDR1": ("ORDR", "DocEntry"), "DLN1": ("ODLN", "DocEntry"),
+    "POR1": ("OPOR", "DocEntry"), "PDN1": ("OPDN", "DocEntry"), "PCH1": ("OPCH", "DocEntry"),
+    "IGE1": ("OIGE", "DocEntry"), "IGN1": ("OIGN", "DocEntry"),
+    "RCT2": ("ORCT", "DocNum"),   # RCT2.DocNum = ORCT.DocEntry
+    "JDT1": ("OJDT", "TransId"),
+    "ITL1": ("OITL", "LogEntry"),
+}
+
+DEFAULT_WINDOW_DAYS = 7
 
 DESTINATIONS = ("bigquery", "postgres")
 
@@ -131,26 +159,57 @@ def run_full(entity: str, destination: str) -> None:
     print(info)
 
 
-def run_incremental(entity: str, destination: str) -> None:
-    if not INCREMENTAL:
-        raise SystemExit("Define al menos una tabla en INCREMENTAL antes de usar --incremental")
+def _window_filter(schema: str, table: str, since: date):
+    """Filtro SQL para la ventana: encabezados por su fecha; líneas por la llave de los encabezados de la ventana."""
+    t = table.upper()
+    if t in WINDOW_TABLES:
+        date_col, _ = WINDOW_TABLES[t]
+        return lambda query, tbl: query.where(tbl.c[date_col] >= since)
+    parent, fk = CHILD_TABLES[t]
+    date_col, key = WINDOW_TABLES[parent]
+    # sa.table/sa.column: nombres de tabla y esquema en minúsculas (= MAYÚSCULAS en HANA), columnas con mayúsculas y
+    # minúsculas se citan solas ("DocEntry")
+    hdr = sa.table(_sa_name(parent), sa.column(key), sa.column(date_col), schema=schema)
+    keys = sa.select(hdr.c[key]).where(hdr.c[date_col] >= since)
+    return lambda query, tbl: query.where(tbl.c[fk].in_(keys))
+
+
+def run_incremental(entity: str, destination: str, days: int) -> None:
     cfg = hana_config(entity)
     creds = hana_credentials(entity)
+    since = date.today() - timedelta(days=days)
+    pipeline = make_pipeline(entity, destination)
+    print(f"Carga incremental de {entity.upper()}: HANA {hana_schema(entity)} -> {destination} {dataset_name(entity)}, "
+          f"documentos con fecha >= {since} ({days} días); catálogos completos")
+
     resources = []
-    for table, (cursor, pk) in INCREMENTAL.items():
+    for name in cfg["tables"] or []:
+        t = name.upper()
+        windowed = t in WINDOW_TABLES or t in CHILD_TABLES
         res = sql_table(
             credentials=creds,
             schema=cfg["schema"],
-            table=_sa_name(table),
+            table=name,
             backend="pyarrow",
             chunk_size=cfg["chunk_size"],
-            incremental=dlt.sources.incremental(cursor),
             reflection_level="full_with_precision",
             table_adapter_callback=drop_excluded_columns,
+            query_adapter_callback=_window_filter(cfg["schema"], t, since) if windowed else None,
         )
-        res.apply_hints(primary_key=pk, write_disposition="merge")
+        if windowed:
+            # delete-insert: en el destino se borran las filas cuyos documentos vienen en la carga y se insertan las nuevas.
+            # La llave va con el nombre de HANA (DocEntry); dlt la normaliza a doc_entry igual que la columna.
+            doc_key = WINDOW_TABLES[t][1] if t in WINDOW_TABLES else CHILD_TABLES[t][1]
+            res.apply_hints(write_disposition={"disposition": "merge", "strategy": "delete-insert"}, merge_key=doc_key)
+        else:
+            res.apply_hints(write_disposition="replace")
         resources.append(res)
-    info = make_pipeline(entity, destination).run(resources, loader_file_format=loader_format(destination))
+
+    if not pipeline.default_schema_name:
+        raise SystemExit(f"{pipeline.pipeline_name} no tiene carga previa en esta máquina: corre primero la carga completa")
+    # Mismo esquema dlt que la carga completa (sql_database), para que las tablas y sus tipos sean los mismos
+    source = dlt.source(lambda: resources, name=pipeline.default_schema_name)()
+    info = pipeline.run(source, loader_file_format=loader_format(destination))
     print(info)
 
 
@@ -158,7 +217,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--test", action="store_true", help="probar conexión a HANA")
-    group.add_argument("--incremental", action="store_true", help="carga incremental (merge)")
+    group.add_argument("--incremental", action="store_true",
+                       help="carga incremental: documentos de los últimos --days días (merge) y catálogos completos")
+    parser.add_argument("--days", type=int, default=DEFAULT_WINDOW_DAYS,
+                        help=f"días hacia atrás de la ventana incremental (por defecto {DEFAULT_WINDOW_DAYS})")
     parser.add_argument("--destination", choices=DESTINATIONS, default=None,
                         help="destino; por defecto [fronterra] destination de config.toml")
     parser.add_argument("--entity", choices=ENTITIES, default=None,
@@ -170,7 +232,7 @@ if __name__ == "__main__":
     if args.test:
         test_connection(entity)
     elif args.incremental:
-        run_incremental(entity, destination)
+        run_incremental(entity, destination, args.days)
     else:
         print(f"Carga completa de {entity.upper()}: HANA {hana_schema(entity)} -> {destination} {dataset_name(entity)}")
         run_full(entity, destination)

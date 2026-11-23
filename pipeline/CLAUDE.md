@@ -50,7 +50,23 @@ documentos posteriores a la carga (p. ej. `TransId` o `UpdateDate` mayores a los
 - dlt agrega `_dlt_load_id` y `_dlt_id` a cada tabla y crea `_dlt_loads`, `_dlt_version`, `_dlt_pipeline_state` (ignorarlas en análisis).
 - **Sin `UpdateDate`** (no sirven como cursor incremental propio): las tablas de líneas (`INV1`, `RDR1`, `DLN1`, `RIN1`, `POR1`, `PDN1`,
   `PCH1`, `IGE1`, `IGN1`, `JDT1`, `RCT2`, `INV12`), `OITL`/`ITL1` y los catálogos `OITB`, `OITW`, `OWHS`, `OCRG`, `CRD1`, `OOCR`.
-  Para el incremental, las líneas se recargan por los `DocEntry` de los encabezados actualizados en la ventana.
+
+## Carga incremental (desde 23-nov-2026)
+`--incremental` (y `run_daily.ps1` de lunes a sábado). Ventana **sin estado**: siempre relee los últimos `--days` días (7 por
+defecto), así un día que falla se recupera solo al siguiente. Definido en `WINDOW_TABLES` y `CHILD_TABLES` de `hana_pipeline.py`.
+- **Encabezados** por fecha: `UpdateDate` en `OINV`, `ORIN`, `ORDR`, `ODLN`, `OPOR`, `OPDN`, `OPCH`, `OIGE`, `OIGN`, `ORCT`, `OJDT`
+  (en SAP, `UpdateDate` se llena desde que se crea el documento; ninguno está vacío); `CreateDate` en `OITL` (bitácora, solo agrega).
+- **Líneas** por la llave de esos encabezados (subconsulta en HANA): `INV1`/`INV12`→`OINV`, `RIN1`, `RDR1`, `DLN1`, `POR1`, `PDN1`,
+  `PCH1`, `IGE1`, `IGN1` por `DocEntry`; `RCT2.DocNum`→`ORCT.DocEntry`; `JDT1`→`OJDT` por `TransId`; `ITL1`→`OITL` por `LogEntry`.
+- Escritura **merge `delete-insert`** con `merge_key` = llave del documento: borra en BigQuery todas las filas de esos documentos e
+  inserta las de HANA (si a un pedido abierto le quitan una línea, también desaparece).
+- **Catálogos y `OBTN`**: `replace` completo en cada corrida (son chicos).
+- El merge usa datasets auxiliares de dlt `raw_sap_fasa_staging` y `raw_sap_fgi_staging`: no borrarlos ni usarlos en análisis.
+- Requiere que el pipeline ya tenga una carga completa en esa máquina (usa el mismo esquema dlt `sql_database`).
+- **Lo que no ve**: documentos borrados en SAP (raro; SAP cancela en vez de borrar). Por eso `run_daily.ps1` hace carga completa
+  los domingos.
+- Primera prueba (23-nov-2026, ventana 7 días): FGI 1.5 min, FASA 2 min (contra 12 min completa); sin llaves duplicadas, 40/40
+  conteos y 31/31 revisiones de contenido cuadran en ambas.
 
 ## Instalar
 Python **3.14** (probado con 3.14.5 en Windows Server 2022).
@@ -73,14 +89,19 @@ copy .dlt\secrets.toml.example .dlt\secrets.toml   # y llenar credenciales reale
 .venv\Scripts\python.exe check_content.py JDT1                     # solo esa tabla (las revisiones están en CHECKS del script)
 .venv\Scripts\python.exe hana_pipeline.py --destination postgres   # solo si hiciera falta (Postgres se conserva)
 .venv\Scripts\python.exe hana_pipeline.py --test                   # solo prueba conexión a HANA y lista esquemas/tablas
-.venv\Scripts\python.exe hana_pipeline.py --incremental            # merge por cursor; requiere llenar el dict INCREMENTAL del script
+.venv\Scripts\python.exe hana_pipeline.py --incremental            # incremental de FASA (últimos 7 días + catálogos)
+.venv\Scripts\python.exe hana_pipeline.py --entity fgi --incremental --days 30   # ventana más amplia, p. ej. tras días sin cargar
 ```
 
 ## Dónde y cada cuánto se ejecuta
-- **Hoy NO está programado**: no hay tarea de Windows, servicio ni cron. Se corre a mano en el servidor Windows
-  (`C:\Users\ftruser16\Documents\Pruebas\fronterra-analytics\pipeline`).
-- Siguiente paso: carga diaria según la guía (incremental con ventana para documentos, recarga completa de catálogos, fotos
-  diarias de `OITW`, CxP y CxC) y una tarea programada de Windows con registro de errores.
+- **`run_daily.ps1`**: carga FGI y FASA y corre `check_counts.py` de cada una. Lunes a sábado incremental, domingo completa
+  (`-Full` la fuerza; `-Days N` cambia la ventana; `-Entities fgi` solo una). Log en `pipeline\logs\AAAA-MM-DD.log` (fuera de
+  Git, se borran a los 60 días). Sale con 0 = OK, 1 = falló una carga, 2 = cargas OK pero algún cuadre no cuadra (durante el día
+  puede ser actividad de SAP, no error).
+- **Tarea programada**: `register_daily_task.ps1` la registra (diario 05:00, "Fronterra - carga SAP a BigQuery"). La corre el
+  usuario a mano, una vez, como administrador: pide la contraseña de Windows en una ventana de Windows (no queda en archivos).
+  **Al 23-nov-2026 todavía no está registrada.**
+- Pendiente: fotos diarias de `OITW`, CxP y CxC; aviso (correo o Teams) cuando la tarea falle; cuenta de Windows propia con pocos permisos.
 
 ## Secretos
 - `.dlt/secrets.toml` (credenciales HANA, cadena de conexión de Railway y llave de la cuenta de servicio de BigQuery) está en
@@ -107,6 +128,6 @@ con Python 3.14.5; crear el venv en una ruta corta (Windows sin rutas largas). `
 ## Brecha contra la guía (20-nov-2026)
 - Hecho: datasets `raw_sap_fasa` (desde `FASA_PROD`) y `raw_sap_fgi` (desde `FGI_PROD`) con las 40 tablas de la guía v2.
 - Falta el usuario de solo lectura propio de FGI (hoy usa el de FASA).
-- Carga `replace` a mano; la guía pide incremental con ventana, recarga completa diaria de catálogos y **fotos diarias** de `OITW`,
-  CxP y CxC (activarlas ya: la historia empieza el día que se activan).
+- Hecho: incremental con ventana y recarga completa de catálogos (`run_daily.ps1`); falta registrar la tarea programada.
+- Faltan las **fotos diarias** de `OITW`, CxP y CxC (activarlas ya: la historia empieza el día que se activan).
 - Falta la segunda instancia de dlt para la base MS SQL de costeo de maquila (máquina en sitio).

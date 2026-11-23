@@ -52,7 +52,8 @@ Capas (guía, sección 4): `raw_sap_fasa`, `raw_sap_fgi` (crudo) → `staging` (
 Estado real al 20-nov-2026:
 - **Crudo de FASA en BigQuery: dataset `raw_sap_fasa`** con las **40 tablas** de la guía v2 (sección 5, Anexo B y `OITB`), leídas
   del esquema HANA **`FASA_PROD`** (producción). Primera carga completa el 20-nov-2026: 5.47 M filas, 5.55 GB; las 40 tablas cuadran
-  con HANA (`pipeline/check_counts.py`). Carga completa a mano, sin tarea programada ni incremental. Detalle en `pipeline/CLAUDE.md`.
+  con HANA (`pipeline/check_counts.py`). Desde el 23-nov-2026 hay carga incremental (`pipeline/run_daily.ps1`), pero la tarea
+  programada aún no está registrada: hoy se corre a mano. Detalle en `pipeline/CLAUDE.md`.
 - El dataset viejo `sap_hana_raw` (9 tablas de `FRONTERRA_PROTO`, en BigQuery y en Postgres) ya no se actualiza; se conserva.
   Postgres (`hanaDB`) es lo que lee la app `dashboard/`; **no borrar su conexión** (el usuario la quiere conservar).
 - **Crudo de FGI en BigQuery: dataset `raw_sap_fgi`** con las mismas 40 tablas, leídas del esquema HANA **`FGI_PROD`** (mismo
@@ -124,10 +125,10 @@ Lightdash (guía v2, sección 16):
 pipeline (dlt):
 - [x] Dataset `raw_sap_fasa` con las 40 tablas de la guía v2 desde `FASA_PROD` (20-nov-2026, conteos cuadrados).
 - [x] Dataset `raw_sap_fgi` con las 40 tablas desde `FGI_PROD` (20-nov-2026, conteos y contenido cuadrados).
-- [ ] Carga incremental con ventana de días y merge por llave. Los encabezados tienen `UpdateDate`; las líneas no: recargarlas por
-      los `DocEntry` de los encabezados actualizados. Recarga completa diaria de catálogos.
+- [x] Carga incremental con ventana de 7 días (merge delete-insert por documento) y recarga completa de catálogos (23-nov-2026,
+      probada en FASA y FGI). `pipeline/run_daily.ps1`: incremental lunes a sábado, completa los domingos.
+- [ ] Registrar la tarea programada (`pipeline/register_daily_task.ps1`, la corre el usuario: pide su contraseña de Windows).
 - [ ] Borrar el dataset viejo `sap_hana_raw` de BigQuery cuando el usuario lo apruebe.
-- [ ] Tarea programada diaria en el servidor, con registro de errores.
 - [ ] **Fotos diarias** de `OITW`, CxP y CxC: activarlas ya (la historia empieza el día que se activan).
 - [x] Verificar que dbt Core funcione con el Python del servidor (3.14): dbt-core 1.12.7 + dbt-bigquery 1.12.4 instalan e importan
       bien (17-nov-2026). Instalar el venv en una ruta corta: Windows no tiene rutas largas activadas y pip falla en rutas profundas.
