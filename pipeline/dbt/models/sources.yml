@@ -1,0 +1,67 @@
+version: 2
+
+# Crudo de SAP que carga dlt (pipeline/hana_pipeline.py). Mismas 40 tablas en las dos entidades; columnas en snake_case
+# (DocEntry -> doc_entry). Se usan como {{ source('sap_' ~ entidad, 'tabla') }}.
+# Frescura: _dlt_loads registra cada carga; la carga diaria corre de madrugada (pipeline/run_daily.ps1).
+
+sources:
+  - name: sap_fasa
+    description: >
+      Raw SAP Business One tables of FASA (Fronterra Avocados, Mexico), loaded by dlt from HANA schema FASA_PROD.
+      Tablas crudas de SAP Business One de FASA (Fronterra Avocados, México), cargadas por dlt desde el esquema FASA_PROD.
+    schema: raw_sap_fasa
+    tables: &sap_tables
+      - name: _dlt_loads
+        description: dlt load log / Bitácora de cargas de dlt
+        config:
+          loaded_at_field: inserted_at
+          freshness:
+            warn_after: {count: 26, period: hour}
+            error_after: {count: 50, period: hour}
+      - {name: ordr, description: Sales orders (header) / Pedidos de venta (encabezado)}
+      - {name: rdr1, description: Sales order lines / Líneas de pedidos de venta}
+      - {name: odln, description: Deliveries (header) / Entregas (encabezado)}
+      - {name: dln1, description: Delivery lines / Líneas de entregas}
+      - {name: oinv, description: A/R invoices (header) / Facturas de venta (encabezado)}
+      - {name: inv1, description: A/R invoice lines / Líneas de facturas de venta}
+      - {name: inv12, description: A/R invoice addresses (ship-to country) / Direcciones de facturas de venta (país de envío)}
+      - {name: orin, description: A/R credit notes (header) / Notas de crédito (encabezado)}
+      - {name: rin1, description: A/R credit note lines / Líneas de notas de crédito}
+      - {name: orct, description: Incoming payments / Cobros de clientes}
+      - {name: rct2, description: Invoices paid by each incoming payment / Facturas pagadas en cada cobro}
+      - {name: opor, description: Purchase orders (header) / Pedidos de compra (encabezado)}
+      - {name: por1, description: Purchase order lines / Líneas de pedidos de compra}
+      - {name: opdn, description: Goods receipt POs (header) / Entradas de mercancía de compra (encabezado)}
+      - {name: pdn1, description: Goods receipt PO lines / Líneas de entradas de mercancía de compra}
+      - {name: opch, description: A/P invoices (header) / Facturas de proveedor (encabezado)}
+      - {name: pch1, description: A/P invoice lines / Líneas de facturas de proveedor}
+      - {name: oige, description: Goods issues (production consumption) / Salidas de mercancía (consumo de fabricación)}
+      - {name: ige1, description: Goods issue lines / Líneas de salidas de mercancía}
+      - {name: oign, description: Goods receipts (finished goods) / Entradas de mercancía (producto terminado)}
+      - {name: ign1, description: Goods receipt lines / Líneas de entradas de mercancía}
+      - {name: obtn, description: Batch master (pallet numbers) / Maestro de lotes (números de pallet)}
+      - {name: oitl, description: Batch transaction log (header) / Bitácora de movimientos por lote (encabezado)}
+      - {name: itl1, description: Batch transaction log lines / Bitácora de movimientos por lote (renglones)}
+      - {name: ojdt, description: Journal entries (header) / Asientos contables (encabezado)}
+      - {name: jdt1, description: Journal entry lines / Renglones de asientos contables}
+      - {name: oact, description: Chart of accounts / Catálogo de cuentas}
+      - {name: oocr, description: Cost centers / Centros de costo}
+      - {name: ofpr, description: Posting periods / Periodos contables}
+      - {name: oadm, description: Company settings (local and system currency) / Datos de la empresa (moneda local y de sistema)}
+      - {name: oitm, description: Items / Artículos}
+      - {name: oitb, description: Item groups / Grupos de artículos}
+      - {name: oitw, description: Stock by warehouse (current) / Existencias por almacén (actuales)}
+      - {name: owhs, description: Warehouses / Almacenes}
+      - {name: ocrd, description: Business partners (customers and vendors) / Socios de negocio (clientes y proveedores)}
+      - {name: ocrg, description: Business partner groups / Grupos de socios de negocio}
+      - {name: crd1, description: Business partner addresses / Direcciones de socios de negocio}
+      - {name: nnm1, description: Document numbering series / Series de numeración}
+      - {name: oprj, description: Projects / Proyectos}
+      - {name: ortt, description: Exchange rates / Tipos de cambio}
+
+  - name: sap_fgi
+    description: >
+      Raw SAP Business One tables of FGI (Fronterra Group Inc, USA), loaded by dlt from HANA schema FGI_PROD.
+      Tablas crudas de SAP Business One de FGI (Fronterra Group Inc, EE.UU.), cargadas por dlt desde el esquema FGI_PROD.
+    schema: raw_sap_fgi
+    tables: *sap_tables
