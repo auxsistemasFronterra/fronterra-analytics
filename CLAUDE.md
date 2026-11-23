@@ -60,7 +60,9 @@ Estado real al 20-nov-2026:
   servidor HANA que FASA). Primera carga completa el 20-nov-2026: 113 mil filas, 131 MB, 2 min; 40/40 conteos y 31/31 revisiones
   de contenido cuadran. Moneda local y de sistema USD. Se lee con el mismo usuario HANA que FASA (falta el usuario propio).
 - Falta la base MS SQL de costeo de maquila.
-- dbt no existe todavía. No hay `marts`, ni pruebas, ni fotos diarias.
+- dbt (`pipeline/dbt/`, desde 23-nov-2026): proyecto con targets dev/prod, fuentes de FASA y FGI, `dim_date` y las **fotos
+  diarias** de inventario (`history.hist_stock_daily`) y CxC/CxP (`history.hist_open_items_daily`), primera foto el 23-nov-2026.
+  Corre en prod al final de `pipeline/run_daily.ps1`. Aún no hay `staging` ni modelos de negocio. Detalle en `pipeline/CLAUDE.md`.
 - En Postgres las tablas y columnas están en minúsculas snake_case (`DocEntry` → `doc_entry`). HANA solo es accesible desde el
   servidor Windows de la red interna.
 - La app guarda los dashboards en el esquema `dashapp`. Los dashboards actuales son **prototipos** sobre el crudo (MXN, semana de
@@ -129,7 +131,12 @@ pipeline (dlt):
       probada en FASA y FGI). `pipeline/run_daily.ps1`: incremental lunes a sábado, completa los domingos.
 - [ ] Registrar la tarea programada (`pipeline/register_daily_task.ps1`, la corre el usuario: pide su contraseña de Windows).
 - [ ] Borrar el dataset viejo `sap_hana_raw` de BigQuery cuando el usuario lo apruebe.
-- [ ] **Fotos diarias** de `OITW`, CxP y CxC: activarlas ya (la historia empieza el día que se activan).
+- [x] **Fotos diarias** de `OITW`, CxP y CxC (dbt, dataset `history`), desde el 23-nov-2026. Solo se toman los días que corre
+      `run_daily.ps1`: registrar la tarea programada para no perder días.
+- [x] Incremental: también recarga documentos y asientos tocados por conciliaciones (cobros y pagos aplicados), que SAP cambia
+      sin actualizar `UpdateDate` (23-nov-2026).
+- [ ] Cuenta de servicio propia de dbt (hoy usa la de dlt); va en `secrets.toml` como `[dbt.credentials]`.
+- [ ] dbt etapa 2 (`staging`), 3 (estados financieros), 4 (margen por venta), 5 (Lightdash), 6 (FGI y consolidado).
 - [x] Verificar que dbt Core funcione con el Python del servidor (3.14): dbt-core 1.12.7 + dbt-bigquery 1.12.4 instalan e importan
       bien (17-nov-2026). Instalar el venv en una ruta corta: Windows no tiene rutas largas activadas y pip falla en rutas profundas.
 

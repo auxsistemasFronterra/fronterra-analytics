@@ -1,0 +1,29 @@
+# Plantilla de conexión de dbt. NO lleva secretos: la llave de la cuenta de servicio la pone run_dbt.py en variables de
+# entorno, leyéndola de pipeline/.dlt/secrets.toml ([dbt.credentials] si existe; si no, [destination.bigquery.credentials]).
+# run_dbt.py copia este archivo a .profiles/profiles.yml (fuera de Git) y apunta DBT_PROFILES_DIR ahí.
+#
+# Targets (guía, sección 3): dev y prod en datasets separados. Con el macro generate_schema_name:
+#   dev  -> dev_staging, dev_intermediate, dev_marts, dev_history, dev_ref
+#   prod -> staging, intermediate, marts, history, ref
+fronterra:
+  target: dev
+  outputs:
+    dev: &bigquery
+      type: bigquery
+      method: service-account-json
+      project: "{{ env_var('DBT_BQ_PROJECT') }}"
+      dataset: dev
+      location: northamerica-south1
+      threads: 4
+      job_execution_timeout_seconds: 600
+      job_retries: 1
+      priority: interactive
+      keyfile_json:
+        type: service_account
+        project_id: "{{ env_var('DBT_BQ_PROJECT') }}"
+        client_email: "{{ env_var('DBT_BQ_CLIENT_EMAIL') }}"
+        private_key: "{{ env_var('DBT_BQ_PRIVATE_KEY') }}"
+        token_uri: https://oauth2.googleapis.com/token
+    prod:
+      <<: *bigquery
+      dataset: prod

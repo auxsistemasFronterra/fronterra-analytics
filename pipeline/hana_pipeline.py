@@ -50,6 +50,9 @@ CHILD_TABLES: dict[str, tuple[str, str]] = {
     "ITL1": ("OITL", "LogEntry"),
 }
 
+# Encabezados cuyo saldo cambia al conciliar: tabla -> tipo de objeto de SAP en ITR1.SrcObjTyp (SrcObjAbs = DocEntry)
+RECONCILED_OBJECTS: dict[str, str] = {"OINV": "13", "ORIN": "14", "OPCH": "18", "ORCT": "24"}
+
 DEFAULT_WINDOW_DAYS = 7
 
 DESTINATIONS = ("bigquery", "postgres")
@@ -162,15 +165,31 @@ def run_full(entity: str, destination: str) -> None:
 def _window_filter(schema: str, table: str, since: date):
     """Filtro SQL para la ventana: encabezados por su fecha; líneas por la llave de los encabezados de la ventana."""
     t = table.upper()
+    # Al conciliar (aplicar un cobro o pago, o cancelar la conciliación) SAP cambia saldos de documentos y asientos viejos
+    # (PaidToDate/DocStatus de facturas, BalDueDeb/BalDueCred de JDT1) sin tocar su UpdateDate. Por eso también se recargan
+    # los documentos y asientos que aparecen en conciliaciones (OITR/ITR1) creadas en la ventana. Probado 23-nov-2026:
+    # explica el 100% de las diferencias de saldos entre HANA y BigQuery (249 renglones de JDT1 en FASA, 3 facturas en FGI).
+    oitr = sa.table("oitr", sa.column("ReconNum"), sa.column("CreateDate"), schema=schema)
+    itr1 = sa.table("itr1", sa.column("ReconNum"), sa.column("TransId"), sa.column("SrcObjTyp"), sa.column("SrcObjAbs"),
+                    schema=schema)
+    recent = sa.select(itr1).join(oitr, oitr.c.ReconNum == itr1.c.ReconNum).where(oitr.c.CreateDate >= since).subquery()
+
     if t in WINDOW_TABLES:
-        date_col, _ = WINDOW_TABLES[t]
+        date_col, key = WINDOW_TABLES[t]
+        if t in RECONCILED_OBJECTS:
+            docs = sa.select(recent.c.SrcObjAbs).where(recent.c.SrcObjTyp == RECONCILED_OBJECTS[t])
+            return lambda query, tbl: query.where(sa.or_(tbl.c[date_col] >= since, tbl.c[key].in_(docs)))
         return lambda query, tbl: query.where(tbl.c[date_col] >= since)
+
     parent, fk = CHILD_TABLES[t]
     date_col, key = WINDOW_TABLES[parent]
     # sa.table/sa.column: nombres de tabla y esquema en minúsculas (= MAYÚSCULAS en HANA), columnas con mayúsculas y
     # minúsculas se citan solas ("DocEntry")
     hdr = sa.table(_sa_name(parent), sa.column(key), sa.column(date_col), schema=schema)
     keys = sa.select(hdr.c[key]).where(hdr.c[date_col] >= since)
+    if t == "JDT1":
+        reconciled = sa.select(recent.c.TransId)
+        return lambda query, tbl: query.where(sa.or_(tbl.c[fk].in_(keys), tbl.c[fk].in_(reconciled)))
     return lambda query, tbl: query.where(tbl.c[fk].in_(keys))
 
 

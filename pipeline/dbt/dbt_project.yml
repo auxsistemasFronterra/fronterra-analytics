@@ -1,0 +1,46 @@
+name: fronterra
+version: "1.0.0"
+config-version: 2
+profile: fronterra   # conexión: profiles.template.yml (la llave la pone run_dbt.py desde secrets.toml)
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  # Fecha de corte única (guía, regla 13): todo el Hub empieza el 1 de junio de 2026
+  start_date: "2026-06-01"
+  # Entidades con crudo en BigQuery (fuentes sap_fasa y sap_fgi)
+  entities: ["fasa", "fgi"]
+  # Moneda local de cada entidad (en OADM viene como "$", sin código ISO)
+  local_currency: {fasa: "MXN", fgi: "USD"}
+  # Zona horaria del negocio para "hoy" (fotos diarias)
+  business_timezone: "America/Mexico_City"
+
+models:
+  fronterra:
+    # Copia las descripciones de los .yml a las tablas y columnas de BigQuery (guía, anexo C)
+    +persist_docs:
+      relation: true
+      columns: true
+    staging:
+      +schema: staging
+      +materialized: view
+    intermediate:
+      +schema: intermediate
+      +materialized: view
+    marts:
+      +schema: marts
+      +materialized: table
+    history:
+      # Fotos diarias: solo agregan la partición del día. full_refresh false = un --full-refresh NO borra la historia.
+      +schema: history
+      +materialized: incremental
+      +full_refresh: false
+
+seeds:
+  fronterra:
+    +schema: ref

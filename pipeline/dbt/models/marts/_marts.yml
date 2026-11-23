@@ -1,0 +1,54 @@
+version: 2
+
+models:
+  - name: dim_date
+    description: >
+      Calendar 2025-2027 with the Fronterra week (Sunday to Saturday, week 1 contains January 1st, like Excel WEEKNUM type 1).
+      All dashboards take weeks and months from here.
+      Calendario 2025-2027 con la Semana Fronterra (domingo a sábado, la SEM 1 contiene el 1 de enero, como WEEKNUM tipo 1
+      de Excel). Todos los tableros toman semanas y meses de aquí.
+    columns:
+      - name: date_day
+        description: Calendar day / Día del calendario
+        tests: [unique, not_null]
+      - name: year
+        description: Calendar year / Año
+      - name: quarter
+        description: Quarter (1-4) / Trimestre (1-4)
+      - name: month_number
+        description: Month number (1-12) / Número de mes (1-12)
+      - name: month_start
+        description: First day of the month / Primer día del mes
+      - name: month_end
+        description: Last day of the month / Último día del mes
+      - name: month_name_es
+        description: Month name in Spanish / Nombre del mes en español
+      - name: month_name_en
+        description: Month name in English / Nombre del mes en inglés
+      - name: day_of_week
+        description: Day of week, 1 = Sunday ... 7 = Saturday / Día de la semana, 1 = domingo ... 7 = sábado
+      - name: day_name_es
+        description: Day name in Spanish / Nombre del día en español
+      - name: day_name_en
+        description: Day name in English / Nombre del día en inglés
+      - name: is_weekend
+        description: Saturday or Sunday / Sábado o domingo
+      - name: week_number
+        description: >
+          Fronterra week number (WK 34). Week 1 contains January 1st, even if partial.
+          Número de Semana Fronterra (SEM 34). La SEM 1 contiene el 1 de enero, aunque sea parcial.
+        tests: [not_null]
+      - name: week_year
+        description: Year the week belongs to (weeks are split at year end) / Año de la semana (las semanas se cortan en el cambio de año)
+      - name: week_start
+        description: First day of the Fronterra week (Sunday, or January 1st) / Primer día de la semana (domingo, o 1 de enero)
+      - name: week_end
+        description: Last day of the Fronterra week (Saturday, or December 31st) / Último día de la semana (sábado, o 31 de diciembre)
+      - name: week_label_es
+        description: Week label in Spanish, e.g. "SEM 34" / Etiqueta de semana en español, p. ej. "SEM 34"
+      - name: week_label_en
+        description: Week label in English, e.g. "WK 34" / Etiqueta de semana en inglés, p. ej. "WK 34"
+      - name: is_hub_period
+        description: >
+          Date is on or after the Hub cut-off date (June 1, 2026). Earlier history is out of the model.
+          Fecha igual o posterior al corte del Hub (1 de junio de 2026). La historia anterior queda fuera del modelo.

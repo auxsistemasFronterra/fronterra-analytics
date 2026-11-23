@@ -1,0 +1,109 @@
+version: 2
+
+# Fotos diarias (guía, sección 5). La historia empieza el día que se activan (23-nov-2026) y no se puede reconstruir:
+# nunca borrar estas tablas ni correrlas con --full-refresh (el proyecto lo bloquea con full_refresh: false).
+
+models:
+  - name: hist_stock_daily
+    description: >
+      Daily snapshot of stock by item and warehouse (SAP OITW) for FASA and FGI, taken after the early-morning load
+      (equals the previous day's closing stock). One partition per day.
+      Foto diaria de existencias por artículo y almacén (OITW de SAP) de FASA y FGI, tomada después de la carga de
+      madrugada (equivale al cierre del día anterior). Una partición por día.
+    tests:
+      - unique:
+          column_name: "concat(cast(snapshot_date as string), '|', entity, '|', item_code, '|', warehouse_code)"
+    columns:
+      - name: snapshot_date
+        description: Date of the snapshot (Mexico time) / Fecha de la foto (hora de México)
+        tests: [not_null]
+      - name: entity
+        description: Company, FASA or FGI / Empresa, FASA o FGI
+        tests: [not_null, {accepted_values: {arguments: {values: ['FASA', 'FGI']}}}]
+      - name: item_code
+        description: SAP item code / Código de artículo de SAP
+        tests: [not_null]
+      - name: item_name
+        description: Item description / Descripción del artículo
+      - name: warehouse_code
+        description: SAP warehouse code / Código de almacén de SAP
+        tests: [not_null]
+      - name: warehouse_name
+        description: Warehouse name / Nombre del almacén
+      - name: on_hand_qty
+        description: Quantity in stock, in the item's inventory unit / Existencia, en la unidad de inventario del artículo
+      - name: committed_qty
+        description: Quantity committed to open sales orders / Cantidad comprometida en pedidos de venta abiertos
+      - name: on_order_qty
+        description: Quantity on open purchase orders / Cantidad en pedidos de compra abiertos
+      - name: avg_price_local
+        description: Average unit cost in local currency / Costo promedio unitario en moneda local
+      - name: stock_value_local
+        description: Stock value in local currency (MXN for FASA, USD for FGI) / Valor del inventario en moneda local (MXN en FASA, USD en FGI)
+      - name: local_currency
+        description: Local currency of the entity / Moneda local de la entidad
+      - name: captured_at
+        description: When dbt took the snapshot (UTC) / Cuándo tomó la foto dbt (UTC)
+
+  - name: hist_open_items_daily
+    description: >
+      Daily snapshot of open accounts receivable and payable by journal line (customers and vendors), FASA and FGI.
+      Same basis as SAP's aging report; the sum per business partner equals its SAP balance.
+      Foto diaria de saldos abiertos de cuentas por cobrar (CxC) y por pagar (CxP) por renglón de asiento, FASA y FGI.
+      Misma base que el reporte de antigüedad de saldos de SAP; la suma por socio es igual a su saldo en SAP.
+    tests:
+      - unique:
+          column_name: "concat(cast(snapshot_date as string), '|', entity, '|', cast(trans_id as string), '|', cast(line_id as string))"
+    columns:
+      - name: snapshot_date
+        description: Date of the snapshot (Mexico time) / Fecha de la foto (hora de México)
+        tests: [not_null]
+      - name: entity
+        description: Company, FASA or FGI / Empresa, FASA o FGI
+        tests: [not_null, {accepted_values: {arguments: {values: ['FASA', 'FGI']}}}]
+      - name: ledger
+        description: receivable (customer) or payable (vendor) / receivable (cliente) o payable (proveedor)
+        tests: [{accepted_values: {arguments: {values: ['receivable', 'payable', 'other']}}}]
+      - name: ledger_es
+        description: CxC (cuentas por cobrar) o CxP (cuentas por pagar)
+      - name: card_code
+        description: Business partner code / Código del socio de negocio
+        tests: [not_null]
+      - name: card_name
+        description: Business partner name / Nombre del socio de negocio
+      - name: account_code
+        description: Control account of the line / Cuenta asociada del renglón
+      - name: trans_id
+        description: Journal entry number (SAP TransId) / Número de asiento (TransId de SAP)
+      - name: line_id
+        description: Line of the journal entry / Renglón del asiento
+      - name: trans_type
+        description: SAP object type of the source document (13 invoice, 14 credit note, 18 A/P invoice, 24 incoming payment...) / Tipo de documento origen en SAP (13 factura, 14 nota de crédito, 18 factura de proveedor, 24 cobro...)
+      - name: base_ref
+        description: Number of the source document / Número del documento origen
+      - name: ref1
+        description: Reference 1 of the line / Referencia 1 del renglón
+      - name: ref2
+        description: Reference 2 of the line / Referencia 2 del renglón
+      - name: line_memo
+        description: Line comment / Comentario del renglón
+      - name: posting_date
+        description: Posting date / Fecha de contabilización
+      - name: due_date
+        description: Due date / Fecha de vencimiento
+      - name: days_past_due
+        description: Days past due at the snapshot date (negative = not yet due) / Días vencidos a la fecha de la foto (negativo = por vencer)
+      - name: open_amount_local
+        description: >
+          Open amount in local currency, debit minus credit (receivables positive, payables negative).
+          Saldo abierto en moneda local, debe menos haber (CxC positivo, CxP negativo).
+      - name: local_currency
+        description: Local currency of the entity (MXN for FASA, USD for FGI) / Moneda local (MXN en FASA, USD en FGI)
+      - name: open_amount_usd
+        description: Open amount in system currency (USD), debit minus credit / Saldo abierto en moneda de sistema (USD), debe menos haber
+      - name: open_amount_fc
+        description: Open amount in the document's foreign currency, if any / Saldo abierto en la moneda extranjera del documento, si la tiene
+      - name: fc_currency
+        description: Foreign currency of the document / Moneda extranjera del documento
+      - name: captured_at
+        description: When dbt took the snapshot (UTC) / Cuándo tomó la foto dbt (UTC)

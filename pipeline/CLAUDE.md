@@ -58,6 +58,11 @@ defecto), así un día que falla se recupera solo al siguiente. Definido en `WIN
   (en SAP, `UpdateDate` se llena desde que se crea el documento; ninguno está vacío); `CreateDate` en `OITL` (bitácora, solo agrega).
 - **Líneas** por la llave de esos encabezados (subconsulta en HANA): `INV1`/`INV12`→`OINV`, `RIN1`, `RDR1`, `DLN1`, `POR1`, `PDN1`,
   `PCH1`, `IGE1`, `IGN1` por `DocEntry`; `RCT2.DocNum`→`ORCT.DocEntry`; `JDT1`→`OJDT` por `TransId`; `ITL1`→`OITL` por `LogEntry`.
+- **Conciliaciones** (`RECONCILED_OBJECTS` y `JDT1`): al aplicar un cobro o pago, SAP cambia saldos de documentos y asientos
+  viejos (`PaidToDate`/`DocStatus` de facturas, `BalDueDeb`/`BalDueCred`/`BalSc*` de `JDT1`) **sin tocar su `UpdateDate`**.
+  Por eso también se recargan `OINV`, `ORIN`, `OPCH`, `ORCT` y los asientos que aparecen en conciliaciones (`OITR`/`ITR1`, se leen
+  en la subconsulta, no se cargan) creadas en la ventana. Encontrado el 23-nov-2026: sin esto, 249 renglones de `JDT1` en FASA y
+  3 facturas de FGI quedaban con saldo viejo; con esto cuadran los saldos pendientes y `OCRD.Balance`.
 - Escritura **merge `delete-insert`** con `merge_key` = llave del documento: borra en BigQuery todas las filas de esos documentos e
   inserta las de HANA (si a un pedido abierto le quitan una línea, también desaparece).
 - **Catálogos y `OBTN`**: `replace` completo en cada corrida (son chicos).
@@ -94,14 +99,15 @@ copy .dlt\secrets.toml.example .dlt\secrets.toml   # y llenar credenciales reale
 ```
 
 ## Dónde y cada cuánto se ejecuta
-- **`run_daily.ps1`**: carga FGI y FASA y corre `check_counts.py` de cada una. Lunes a sábado incremental, domingo completa
-  (`-Full` la fuerza; `-Days N` cambia la ventana; `-Entities fgi` solo una). Log en `pipeline\logs\AAAA-MM-DD.log` (fuera de
-  Git, se borran a los 60 días). Sale con 0 = OK, 1 = falló una carga, 2 = cargas OK pero algún cuadre no cuadra (durante el día
-  puede ser actividad de SAP, no error).
+- **`run_daily.ps1`**: carga FGI y FASA, corre `check_counts.py` de cada una y, si ninguna carga falló, `dbt build --target prod`
+  (modelos, fotos diarias y pruebas). Lunes a sábado incremental, domingo completa (`-Full` la fuerza; `-Days N` cambia la
+  ventana; `-Entities fgi` solo una; `-SkipDbt` sin dbt). Log en `pipeline\logs\AAAA-MM-DD.log` (fuera de Git, se borran a los
+  60 días). Sale con 0 = OK, 1 = falló una carga (dbt no corre), 3 = falló dbt, 2 = todo corrió pero algún cuadre de filas no
+  cuadra (durante el día suele ser actividad de SAP entre la carga y el cuadre, no error).
 - **Tarea programada**: `register_daily_task.ps1` la registra (diario 05:00, "Fronterra - carga SAP a BigQuery"). La corre el
   usuario a mano, una vez, como administrador: pide la contraseña de Windows en una ventana de Windows (no queda en archivos).
   **Al 23-nov-2026 todavía no está registrada.**
-- Pendiente: fotos diarias de `OITW`, CxP y CxC; aviso (correo o Teams) cuando la tarea falle; cuenta de Windows propia con pocos permisos.
+- Pendiente: aviso (correo o Teams) cuando la tarea falle; cuenta de Windows propia con pocos permisos.
 
 ## Secretos
 - `.dlt/secrets.toml` (credenciales HANA, cadena de conexión de Railway y llave de la cuenta de servicio de BigQuery) está en
@@ -119,15 +125,37 @@ copy .dlt\secrets.toml.example .dlt\secrets.toml   # y llenar credenciales reale
 - BigQuery: la región del dataset no se puede cambiar después de creado (`northamerica-south1`). DML requiere facturación
   (el proyecto `bigquery-515016` la tiene; el primer proyecto de GCP no, por eso se usó Postgres al principio).
 
-## dbt
-**Aún no existe.** Pendiente: proyecto dbt en `pipeline/dbt/` siguiendo `docs/guia_desarrollo.md` (secciones 4, 6 y 10, Anexos B y C):
-capas `staging` → `intermediate` → `marts` + `ref`, nombres en inglés, descripciones bilingües, una prueba por modelo,
-targets `dev` y `prod` en datasets separados. Adaptador **dbt-bigquery**. Probado: dbt-core 1.12.7 + dbt-bigquery 1.12.4 funcionan
-con Python 3.14.5; crear el venv en una ruta corta (Windows sin rutas largas). `profiles.yml` no va al repo.
+## dbt (`pipeline/dbt/`, desde 23-nov-2026)
+Sigue `docs/guia_desarrollo.md` (secciones 3, 4, 6 y 10, Anexos B y C). Plan por etapas: 0 proyecto y conexión (hecho),
+1 fotos diarias (hecho), 2 `staging`, 3 estados financieros, 4 margen por venta de FASA (Fase A), 5 Lightdash, 6 FGI y consolidado.
+- **Instalación:** venv en ruta corta `C:\Users\ftruser16\dbt-venv` (dbt-core 1.12.7 + dbt-bigquery 1.12.4, Python 3.14; Windows
+  no tiene rutas largas y pip falla en rutas profundas). Separado del venv de dlt.
+- **Correr:** siempre con `run_dbt.py`, que lee la llave de `pipeline/.dlt/secrets.toml` y la pasa por variables de entorno
+  (no se copia a ningún archivo); usa `[dbt.credentials]` si existe y si no la cuenta de dlt. Copia `profiles.template.yml` a
+  `.profiles/profiles.yml` (fuera de Git, sin secretos).
+  ```bash
+  C:\Users\ftruser16\dbt-venv\Scripts\python.exe dbt\run_dbt.py debug
+  C:\Users\ftruser16\dbt-venv\Scripts\python.exe dbt\run_dbt.py build                  # target dev
+  C:\Users\ftruser16\dbt-venv\Scripts\python.exe dbt\run_dbt.py build --target prod    # lo hace run_daily.ps1 cada día
+  C:\Users\ftruser16\dbt-venv\Scripts\python.exe dbt\run_dbt.py source freshness        # ¿la carga de dlt está al día?
+  ```
+- **Datasets** (macro `generate_schema_name`): prod = `staging`, `intermediate`, `marts`, `history`, `ref`; dev = mismos con
+  prefijo `dev_`. Todos en `northamerica-south1`.
+- **Fuentes** (`models/sources.yml`): `sap_fasa` y `sap_fgi`, las 40 tablas; frescura por `_dlt_loads.inserted_at` (aviso a 26 h).
+- **Hoy hay:** `dim_date` (Semana Fronterra, regla 18, con prueba de casos 2026-2027) y las **fotos diarias** en `history`:
+  - `hist_stock_daily`: `OITW` con existencia, comprometido o pedido distinto de cero, por artículo y almacén.
+  - `hist_open_items_daily`: CxC y CxP por renglón de `JDT1` con saldo pendiente (base del reporte de antigüedad de SAP);
+    prueba `assert_open_items_match_bp_balance`: la suma por socio = `OCRD.Balance`.
+  - Incrementales `insert_overwrite` por `snapshot_date` (fecha de México): correr varias veces el mismo día reemplaza la foto
+    del día, no duplica. `full_refresh: false`: un `--full-refresh` no las borra. **Primera foto en prod: 23-nov-2026.**
+    **Nunca borrar `history`**: la historia no se puede reconstruir.
+- **Pendiente:** cuenta de servicio propia de dbt (escribe en sus datasets y lee `raw_*`); hoy usa la de dlt.
+  Cuando exista: `[dbt.credentials]` en `secrets.toml` con `project_id`, `client_email` y `private_key`.
 
-## Brecha contra la guía (20-nov-2026)
+## Brecha contra la guía (23-nov-2026)
 - Hecho: datasets `raw_sap_fasa` (desde `FASA_PROD`) y `raw_sap_fgi` (desde `FGI_PROD`) con las 40 tablas de la guía v2.
 - Falta el usuario de solo lectura propio de FGI (hoy usa el de FASA).
 - Hecho: incremental con ventana y recarga completa de catálogos (`run_daily.ps1`); falta registrar la tarea programada.
-- Faltan las **fotos diarias** de `OITW`, CxP y CxC (activarlas ya: la historia empieza el día que se activan).
+- Hecho: **fotos diarias** de `OITW`, CxC y CxP (dbt, `history`), desde el 23-nov-2026. Solo se toman si corre `run_daily.ps1`
+  (o dbt en prod): mientras no esté registrada la tarea programada, cada día sin correr es un día sin foto.
 - Falta la segunda instancia de dlt para la base MS SQL de costeo de maquila (máquina en sitio).
