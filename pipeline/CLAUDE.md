@@ -106,7 +106,9 @@ copy .dlt\secrets.toml.example .dlt\secrets.toml   # y llenar credenciales reale
   cuadra (durante el día suele ser actividad de SAP entre la carga y el cuadre, no error).
 - **Tarea programada**: `register_daily_task.ps1` la registra (diario 05:00, "Fronterra - carga SAP a BigQuery"). La corre el
   usuario a mano, una vez, como administrador: pide la contraseña de Windows en una ventana de Windows (no queda en archivos).
-  **Al 23-nov-2026 todavía no está registrada.**
+  **Registrada; corre como `ftruser16`.** Primera corrida automática 24-nov-2026 05:00: OK (código 0) en 5 min, cuadres 40/40 en
+  ambas entidades, dbt 20/20. Revisar: `Get-ScheduledTaskInfo -TaskName 'Fronterra - carga SAP a BigQuery'` (LastTaskResult)
+  y el log del día. Las horas de dbt dentro del log están en UTC.
 - Pendiente: aviso (correo o Teams) cuando la tarea falle; cuenta de Windows propia con pocos permisos.
 
 ## Secretos
@@ -152,10 +154,10 @@ Sigue `docs/guia_desarrollo.md` (secciones 3, 4, 6 y 10, Anexos B y C). Plan por
 - **Pendiente:** cuenta de servicio propia de dbt (escribe en sus datasets y lee `raw_*`); hoy usa la de dlt.
   Cuando exista: `[dbt.credentials]` en `secrets.toml` con `project_id`, `client_email` y `private_key`.
 
-## Brecha contra la guía (23-nov-2026)
+## Brecha contra la guía (24-nov-2026)
 - Hecho: datasets `raw_sap_fasa` (desde `FASA_PROD`) y `raw_sap_fgi` (desde `FGI_PROD`) con las 40 tablas de la guía v2.
 - Falta el usuario de solo lectura propio de FGI (hoy usa el de FASA).
-- Hecho: incremental con ventana y recarga completa de catálogos (`run_daily.ps1`); falta registrar la tarea programada.
-- Hecho: **fotos diarias** de `OITW`, CxC y CxP (dbt, `history`), desde el 23-nov-2026. Solo se toman si corre `run_daily.ps1`
-  (o dbt en prod): mientras no esté registrada la tarea programada, cada día sin correr es un día sin foto.
+- Hecho: incremental con ventana y recarga completa de catálogos (`run_daily.ps1`), con tarea programada diaria a las 05:00.
+- Hecho: **fotos diarias** de `OITW`, CxC y CxP (dbt, `history`), desde el 23-nov-2026. Solo se toman los días que corre la
+  tarea: si el servidor está apagado a las 05:00, ese día no hay foto (la tarea corre al encender, `StartWhenAvailable`).
 - Falta la segunda instancia de dlt para la base MS SQL de costeo de maquila (máquina en sitio).
