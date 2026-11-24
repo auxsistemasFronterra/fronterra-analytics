@@ -52,8 +52,9 @@ Capas (guía, sección 4): `raw_sap_fasa`, `raw_sap_fgi` (crudo) → `staging` (
 Estado real al 20-nov-2026:
 - **Crudo de FASA en BigQuery: dataset `raw_sap_fasa`** con las **40 tablas** de la guía v2 (sección 5, Anexo B y `OITB`), leídas
   del esquema HANA **`FASA_PROD`** (producción). Primera carga completa el 20-nov-2026: 5.47 M filas, 5.55 GB; las 40 tablas cuadran
-  con HANA (`pipeline/check_counts.py`). Desde el 23-nov-2026 hay carga incremental (`pipeline/run_daily.ps1`), pero la tarea
-  programada aún no está registrada: hoy se corre a mano. Detalle en `pipeline/CLAUDE.md`.
+  con HANA (`pipeline/check_counts.py`). Desde el 23-nov-2026 hay carga incremental (`pipeline/run_daily.ps1`), y desde el
+  24-nov-2026 la corre sola la tarea programada "Fronterra - carga SAP a BigQuery" (diario 05:00, cuenta `ftruser16`; primera
+  corrida OK en 5 min). Detalle en `pipeline/CLAUDE.md`.
 - El dataset viejo `sap_hana_raw` (9 tablas de `FRONTERRA_PROTO`, en BigQuery y en Postgres) ya no se actualiza; se conserva.
   Postgres (`hanaDB`) es lo que lee la app `dashboard/`; **no borrar su conexión** (el usuario la quiere conservar).
 - **Crudo de FGI en BigQuery: dataset `raw_sap_fgi`** con las mismas 40 tablas, leídas del esquema HANA **`FGI_PROD`** (mismo
@@ -129,10 +130,11 @@ pipeline (dlt):
 - [x] Dataset `raw_sap_fgi` con las 40 tablas desde `FGI_PROD` (20-nov-2026, conteos y contenido cuadrados).
 - [x] Carga incremental con ventana de 7 días (merge delete-insert por documento) y recarga completa de catálogos (23-nov-2026,
       probada en FASA y FGI). `pipeline/run_daily.ps1`: incremental lunes a sábado, completa los domingos.
-- [ ] Registrar la tarea programada (`pipeline/register_daily_task.ps1`, la corre el usuario: pide su contraseña de Windows).
+- [x] Tarea programada registrada (`pipeline/register_daily_task.ps1`): diario 05:00 como `ftruser16`. Primera corrida
+      24-nov-2026: cargas, cuadres 40/40 y dbt 20/20 OK.
 - [ ] Borrar el dataset viejo `sap_hana_raw` de BigQuery cuando el usuario lo apruebe.
-- [x] **Fotos diarias** de `OITW`, CxP y CxC (dbt, dataset `history`), desde el 23-nov-2026. Solo se toman los días que corre
-      `run_daily.ps1`: registrar la tarea programada para no perder días.
+- [x] **Fotos diarias** de `OITW`, CxP y CxC (dbt, dataset `history`), desde el 23-nov-2026 (la del 23 se tomó a las 16:00, las
+      siguientes a las 05:00). Solo se toman los días que corre la tarea programada: si el servidor está apagado, ese día no hay foto.
 - [x] Incremental: también recarga documentos y asientos tocados por conciliaciones (cobros y pagos aplicados), que SAP cambia
       sin actualizar `UpdateDate` (23-nov-2026).
 - [ ] Cuenta de servicio propia de dbt (hoy usa la de dlt); va en `secrets.toml` como `[dbt.credentials]`.
